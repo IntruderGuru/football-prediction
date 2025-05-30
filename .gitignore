@@ -3,4 +3,5 @@ __pycache__/
 .venv/
 .env
 # data/
+.pre-commit-config.yaml
 .ipynb_checkpoints/
