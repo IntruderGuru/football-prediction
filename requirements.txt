@@ -1,0 +1,13 @@
+pandas
+numpy
+scikit-learn
+lightgbm
+requests
+matplotlib
+seaborn
+plotly
+jupyter
+pyyaml
+tqdm
+pyarrow
+fastparquet
