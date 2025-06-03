@@ -11,3 +11,6 @@ pyyaml
 tqdm
 pyarrow
 fastparquet
+aiohttp 
+bs4
+understat

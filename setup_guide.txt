@@ -12,5 +12,3 @@ pre-commit install
 pip install notebook
 jupyter notebook
 
-
-pip install understat

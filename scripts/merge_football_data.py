@@ -1,23 +1,36 @@
-import pandas as pd
+import pandas as pd, numpy as np, re, itertools
 from pathlib import Path
-import numpy as np
+
+DIV_MAP = {
+    "E0": "EPL",
+    "SP1": "LALIGA",
+    "D1": "BUNDESLIGA",
+    "I1": "SERIEA",
+    "F1": "LIGUE1",
+}
+RAW = Path("data/raw")
 
 
-def load_and_merge_fd():
-    files = Path("data/raw").glob("fd_*.csv")
-    all_df = []
-
-    for file in files:
-        df = pd.read_csv(file)
-
-        for col in ["B365H", "B365D", "B365A"]:
-            if col not in df.columns:
-                df[col] = np.nan
-
-        df["bookie_home"] = pd.to_numeric(df["B365H"], errors="coerce")
-        df["bookie_draw"] = pd.to_numeric(df["B365D"], errors="coerce")
-        df["bookie_away"] = pd.to_numeric(df["B365A"], errors="coerce")
-
+def load_fd() -> pd.DataFrame:
+    rows = []
+    for fp in RAW.glob("fd_*.csv"):
+        m = re.match(r"fd_(?P<div>[A-Z0-9]+)_(?P<season>\d{4}).csv", fp.name)
+        if not m:
+            continue
+        league = DIV_MAP[m["div"]]
+        df = pd.read_csv(
+            fp,
+            usecols=[
+                "Date",
+                "HomeTeam",
+                "AwayTeam",
+                "FTHG",
+                "FTAG",
+                "B365H",
+                "B365D",
+                "B365A",
+            ],
+        )
         df = df.rename(
             columns={
                 "Date": "date",
@@ -25,32 +38,21 @@ def load_and_merge_fd():
                 "AwayTeam": "away_team",
                 "FTHG": "home_goals",
                 "FTAG": "away_goals",
+                "B365H": "bookie_home",
+                "B365D": "bookie_draw",
+                "B365A": "bookie_away",
             }
         )
+        df["league"] = league
+        df["date"] = pd.to_datetime(df["date"], dayfirst=True).dt.date
+        rows.append(df)
+    return pd.concat(rows, ignore_index=True)
 
-        df["source_file"] = file.name
 
-        all_df.append(
-            df[
-                [
-                    "date",
-                    "home_team",
-                    "away_team",
-                    "home_goals",
-                    "away_goals",
-                    "bookie_home",
-                    "bookie_draw",
-                    "bookie_away",
-                    "source_file",
-                ]
-            ]
-        )
-
-    final = pd.concat(all_df).sort_values("date")
-    return final
+def main() -> None:
+    fd_df = load_fd()
+    fd_df.to_csv("data/raw/football_data_merged.csv", index=False)
 
 
 if __name__ == "__main__":
-    df = load_and_merge_fd()
-    df.to_csv("data/raw/football_data_merged.csv", index=False)
-    print(f"Merged and saved to data/raw/football_data_merged.csv ({df.shape[0]} rows)")
+    main()
