@@ -10,7 +10,7 @@ jupyter
 pyyaml
 tqdm
 pyarrow
-fastparquet
-aiohttp 
+aiohttp
 bs4
 understat
+fastparquet
