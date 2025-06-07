@@ -14,3 +14,4 @@ aiohttp
 bs4
 understat
 fastparquet
+joblib

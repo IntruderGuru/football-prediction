@@ -1,0 +1,1027 @@
+===== C:\Users\barte\OneDrive\Pulpit\Studia\ROK III\Semestr 2\football-prediction\output.txt =====
+
+
+===== C:\Users\barte\OneDrive\Pulpit\Studia\ROK III\Semestr 2\football-prediction\requirements.txt =====
+pandas
+numpy
+scikit-learn
+lightgbm
+requests
+matplotlib
+seaborn
+plotly
+jupyter
+pyyaml
+tqdm
+pyarrow
+aiohttp
+bs4
+understat
+fastparquet
+joblib
+
+
+===== C:\Users\barte\OneDrive\Pulpit\Studia\ROK III\Semestr 2\football-prediction\setup_guide.txt =====
+conda create -n footpred python=3.11 -y
+conda activate footpred
+
+
+pip install -r requirements.txt
+
+
+pip install pre-commit ruff black
+pre-commit install
+
+$env:PYTHONPATH="."
+
+// to opcjonalnie narazie nie używamy
+pip install notebook
+jupyter notebook
+
+
+===== C:\Users\barte\OneDrive\Pulpit\Studia\ROK III\Semestr 2\football-prediction\output\report.txt =====
+              precision    recall  f1-score   support
+
+           A       0.59      0.72      0.65       513
+           D       0.35      0.16      0.22       410
+           H       0.66      0.77      0.71       699
+
+    accuracy                           0.60      1622
+   macro avg       0.54      0.55      0.53      1622
+weighted avg       0.56      0.60      0.57      1622
+
+
+===== C:\Users\barte\OneDrive\Pulpit\Studia\ROK III\Semestr 2\football-prediction\scripts\fetch_football_data_uk.py =====
+import requests, itertools
+from pathlib import Path
+
+SEASONS = ["2324", "2223", "2122", "2021", "1920"]
+LEAGUES = {
+    "E0": "EPL",
+    "SP1": "LALIGA",
+    "D1": "BUNDESLIGA",
+    "I1": "SERIEA",
+    "F1": "LIGUE1",
+}
+BASE = "https://www.football-data.co.uk/mmz4281/{season}/{code}.csv"
+OUT_DIR = Path("data/raw")
+
+
+def fetch_file(season: str, code: str) -> None:
+    url = BASE.format(season=season, code=code)
+    resp = requests.get(url, timeout=20)
+    resp.raise_for_status()
+    OUT_DIR.mkdir(parents=True, exist_ok=True)
+    (OUT_DIR / f"fd_{code}_{season}.csv").write_bytes(resp.content)
+
+
+def main() -> None:
+    for season, code in itertools.product(SEASONS, LEAGUES):
+        try:
+            fetch_file(season, code)
+        except Exception:
+            pass
+
+
+if __name__ == "__main__":
+    main()
+
+
+===== C:\Users\barte\OneDrive\Pulpit\Studia\ROK III\Semestr 2\football-prediction\scripts\fetch_understat.py =====
+import pandas as pd, ast, numpy as np
+from pathlib import Path
+import pyarrow.parquet as pq
+import pyarrow as pa
+
+
+def merge_sources() -> None:
+    u = pd.read_csv("data/raw/understat_all.csv")
+    f = pd.read_csv("data/raw/football_data_merged.csv")
+
+    f["date"] = pd.to_datetime(f["date"], dayfirst=False).dt.normalize()
+    u["datetime"] = pd.to_datetime(u["datetime"])
+    u = u[u["datetime"].notna()]
+    u["date"] = u["datetime"].dt.normalize()
+
+    for col in ["h", "a", "goals", "xG"]:
+        u[col] = u[col].apply(ast.literal_eval)
+
+    u["home_goals"] = u["goals"].apply(lambda g: int(g["h"]))
+    u["away_goals"] = u["goals"].apply(lambda g: int(g["a"]))
+    u["xG_home"] = u["xG"].apply(lambda g: float(g["h"]))
+    u["xG_away"] = u["xG"].apply(lambda g: float(g["a"]))
+
+    team_map = {
+        "Manchester United": "Man United",
+        "Manchester City": "Man City",
+        "Wolverhampton Wanderers": "Wolves",
+        "Brighton & Hove Albion": "Brighton",
+        "Tottenham Hotspur": "Tottenham",
+        "West Ham United": "West Ham",
+        "Newcastle United": "Newcastle",
+        "Nottingham Forest": "Nott'm Forest",
+        "Sheffield United": "Sheffield Utd",
+        "Leeds United": "Leeds",
+        "Leicester City": "Leicester",
+        "Aston Villa": "Aston Villa",
+        "Crystal Palace": "Crystal Palace",
+        "Everton": "Everton",
+        "Arsenal": "Arsenal",
+        "Liverpool": "Liverpool",
+        "Chelsea": "Chelsea",
+        "Southampton": "Southampton",
+        "Burnley": "Burnley",
+        "Bournemouth": "Bournemouth",
+        "Watford": "Watford",
+        "Brentford": "Brentford",
+        "Fulham": "Fulham",
+    }
+    u["home_team"] = u["h"].apply(lambda d: team_map.get(d["title"], d["title"]))
+    u["away_team"] = u["a"].apply(lambda d: team_map.get(d["title"], d["title"]))
+
+    merged = f.merge(
+        u[["date", "league", "home_team", "away_team", "xG_home", "xG_away"]],
+        on=["date", "league", "home_team", "away_team"],
+        how="left",
+    )
+
+    merged["bookie_sum"] = (
+        1 / merged["bookie_home"]
+        + 1 / merged["bookie_draw"]
+        + 1 / merged["bookie_away"]
+    )
+    merged["bookie_prob_home"] = (1 / merged["bookie_home"]) / merged["bookie_sum"]
+    merged["bookie_prob_draw"] = (1 / merged["bookie_draw"]) / merged["bookie_sum"]
+    merged["bookie_prob_away"] = (1 / merged["bookie_away"]) / merged["bookie_sum"]
+
+    merged["result"] = np.select(
+        [
+            merged["home_goals"] > merged["away_goals"],
+            merged["home_goals"] < merged["away_goals"],
+        ],
+        ["H", "A"],
+        default="D",
+    )
+
+    merged["date"] = pd.to_datetime(merged["date"], errors="coerce")
+    num_cols = [
+        "home_goals",
+        "away_goals",
+        "xG_home",
+        "xG_away",
+        "bookie_home",
+        "bookie_draw",
+        "bookie_away",
+        "bookie_prob_home",
+        "bookie_prob_draw",
+        "bookie_prob_away",
+    ]
+    merged[num_cols] = merged[num_cols].apply(pd.to_numeric, errors="coerce")
+
+    Path("data/processed").mkdir(parents=True, exist_ok=True)
+
+    table = pa.Table.from_pandas(merged)
+    pq.write_table(table, "data/processed/merged.parquet")
+    print(f" merged.parquet saved  ({merged.shape[0]} rows)")
+
+
+if __name__ == "__main__":
+    merge_sources()
+
+
+===== C:\Users\barte\OneDrive\Pulpit\Studia\ROK III\Semestr 2\football-prediction\scripts\merge_football_data.py =====
+import pandas as pd, numpy as np, re, itertools
+from pathlib import Path
+
+DIV_MAP = {
+    "E0": "EPL",
+    "SP1": "LALIGA",
+    "D1": "BUNDESLIGA",
+    "I1": "SERIEA",
+    "F1": "LIGUE1",
+}
+RAW = Path("data/raw")
+
+
+def load_fd() -> pd.DataFrame:
+    rows = []
+    for fp in RAW.glob("fd_*.csv"):
+        m = re.match(r"fd_(?P<div>[A-Z0-9]+)_(?P<season>\d{4}).csv", fp.name)
+        if not m:
+            continue
+        league = DIV_MAP[m["div"]]
+        df = pd.read_csv(
+            fp,
+            usecols=[
+                "Date",
+                "HomeTeam",
+                "AwayTeam",
+                "FTHG",
+                "FTAG",
+                "B365H",
+                "B365D",
+                "B365A",
+            ],
+        )
+        df = df.rename(
+            columns={
+                "Date": "date",
+                "HomeTeam": "home_team",
+                "AwayTeam": "away_team",
+                "FTHG": "home_goals",
+                "FTAG": "away_goals",
+                "B365H": "bookie_home",
+                "B365D": "bookie_draw",
+                "B365A": "bookie_away",
+            }
+        )
+        df["league"] = league
+        df["date"] = pd.to_datetime(df["date"], dayfirst=True).dt.date
+        rows.append(df)
+    return pd.concat(rows, ignore_index=True)
+
+
+def main() -> None:
+    fd_df = load_fd()
+    fd_df.to_csv("data/raw/football_data_merged.csv", index=False)
+
+
+if __name__ == "__main__":
+    main()
+
+
+===== C:\Users\barte\OneDrive\Pulpit\Studia\ROK III\Semestr 2\football-prediction\scripts\merge_sources.py =====
+import pandas as pd
+import ast
+import numpy as np
+from pathlib import Path
+import pyarrow as pa
+import pyarrow.parquet as pq
+
+
+def merge_sources():
+
+    f = pd.read_csv("data/raw/football_data_merged.csv", parse_dates=["date"])
+
+    f["date"] = pd.to_datetime(f["date"], errors="coerce")
+    f["date_only"] = f["date"].dt.normalize()
+
+    u = pd.read_csv("data/raw/understat_all.csv")
+    u["datetime"] = pd.to_datetime(u["datetime"], errors="coerce")
+    u = u[u["datetime"].notna()]
+    u["date"] = u["datetime"].dt.normalize()
+
+    def parse_json(x, key, cast_type):
+        try:
+            return cast_type(ast.literal_eval(x)[key])
+        except (ValueError, SyntaxError, KeyError, TypeError):
+            return np.nan
+
+    u["home_goals_us"] = u["goals"].apply(lambda s: parse_json(s, "h", int))
+    u["away_goals_us"] = u["goals"].apply(lambda s: parse_json(s, "a", int))
+    u["xG_home"] = u["xG"].apply(lambda s: parse_json(s, "h", float))
+    u["xG_away"] = u["xG"].apply(lambda s: parse_json(s, "a", float))
+
+    team_map = {
+        # ——— Premier League / Championship
+        "Manchester United": "Man United",
+        "Manchester City": "Man City",
+        "Wolverhampton Wanderers": "Wolves",
+        "Brighton & Hove Albion": "Brighton",
+        "Tottenham Hotspur": "Tottenham",
+        "West Ham United": "West Ham",
+        "Newcastle United": "Newcastle",
+        "Nottingham Forest": "Nott'm Forest",
+        "Sheffield United": "Sheffield United",
+        "Crystal Palace": "Crystal Palace",
+        "Liverpool": "Liverpool",
+        "Chelsea": "Chelsea",
+        "Arsenal": "Arsenal",
+        "Everton": "Everton",
+        "Bournemouth": "Bournemouth",
+        "Burnley": "Burnley",
+        "Southampton": "Southampton",
+        "Leicester": "Leicester",
+        "Leeds": "Leeds",
+        "Aston Villa": "Aston Villa",
+        "Watford": "Watford",
+        "Wolves": "Wolves",
+        "West Bromwich Albion": "West Brom",
+        "Fulham": "Fulham",
+        # ——— La Liga
+        "Athletic Club": "Ath Bilbao",
+        "Atletico Madrid": "Ath Madrid",
+        "Real Madrid": "Real Madrid",
+        "FC Barcelona": "Barcelona",
+        "Real Sociedad": "Sociedad",
+        "Real Betis": "Betis",
+        "Real Valladolid": "Valladolid",
+        "Espanyol": "Espanol",
+        "Granada": "Granada",
+        "Celta Vigo": "Celta",
+        "Sevilla": "Sevilla",
+        "Valencia": "Valencia",
+        "Villarreal": "Villarreal",
+        "Getafe": "Getafe",
+        "Levante": "Levante",
+        "Alaves": "Alaves",
+        "Mallorca": "Mallorca",
+        "Elche": "Elche",
+        "Cadiz": "Cadiz",
+        "Eibar": "Eibar",
+        "Osasuna": "Osasuna",
+        # ——— Ligue 1
+        "Paris Saint Germain": "Paris SG",
+        "Olympique Marseille": "Marseille",
+        "Lyon": "Lyon",
+        "Lille": "Lille",
+        "AS Monaco": "Monaco",
+        "Nice": "Nice",
+        "Stade Rennais": "Rennes",
+        "Nantes": "Nantes",
+        "Strasbourg": "Strasbourg",
+        "Brest": "Brest",
+        "Ajaccio": "Ajaccio",
+        "Nimes": "Nimes",
+        "Montpellier": "Montpellier",
+        "Lorient": "Lorient",
+        "Bordeaux": "Bordeaux",
+        "Reims": "Reims",
+        "Amiens": "Amiens",
+        "Angers": "Angers",
+        "Dijon": "Dijon",
+        "Clermont Foot": "Clermont",
+        "Metz": "Metz",
+        "Lens": "Lens",
+        # ——— Serie A
+        "Inter Milan": "Inter",
+        "AC Milan": "Milan",
+        "Juventus": "Juventus",
+        "Atalanta": "Atalanta",
+        "Napoli": "Napoli",
+        "Roma": "Roma",
+        "SS Lazio": "Lazio",
+        "Fiorentina": "Fiorentina",
+        "Torino": "Torino",
+        "Udinese": "Udinese",
+        "Bologna": "Bologna",
+        "Empoli": "Empoli",
+        "Sassuolo": "Sassuolo",
+        "Cagliari": "Cagliari",
+        "Sampdoria": "Sampdoria",
+        "Verona": "Verona",
+        "Genoa": "Genoa",
+        "Salernitana": "Salernitana",
+        "Brescia": "Brescia",
+        "Lecce": "Lecce",
+        "Monza": "Monza",
+        # ——— Bundesliga
+        "Bayern Munich": "Bayern Munich",
+        "Borussia Dortmund": "Dortmund",
+        "Bayer Leverkusen": "Leverkusen",
+        "RB Leipzig": "RB Leipzig",
+        "Borussia M.Gladbach": "M'gladbach",
+        "VfB Stuttgart": "Stuttgart",
+        "Eintracht Frankfurt": "Ein Frankfurt",
+        "FC Cologne": "FC Koln",
+        "Union Berlin": "Union Berlin",
+        "Freiburg": "Freiburg",
+        "Hertha Berlin": "Hertha",
+        "Hoffenheim": "Hoffenheim",
+        "Wolfsburg": "Wolfsburg",
+        "Mainz 05": "Mainz",
+        "Augsburg": "Augsburg",
+        "Schalke 04": "Schalke 04",
+        "Werder Bremen": "Werder Bremen",
+        "Fortuna Duesseldorf": "Fortuna Dusseldorf",
+        "Greuther Fuerth": "Greuther Furth",
+        "FC Heidenheim": "Heidenheim",
+        "Arminia Bielefeld": "Bielefeld",
+        # ——— Inne
+        "Holstein Kiel": "Holstein Kiel",
+        "Ipswich": "Ipswich",
+        "Como": "Como",
+        "Parma Calcio 1913": "Parma",
+        "RasenBallsport Leipzig": "RB Leipzig",
+        "Rayo Vallecano": "Vallecano",
+        "Saint-Etienne": "St Etienne",
+        "St. Pauli": "St. Pauli",
+    }
+
+    u["home_team_normed"] = u["h"].apply(
+        lambda x: team_map.get(
+            ast.literal_eval(x)["title"].strip(), ast.literal_eval(x)["title"].strip()
+        )
+    )
+    u["away_team_normed"] = u["a"].apply(
+        lambda x: team_map.get(
+            ast.literal_eval(x)["title"].strip(), ast.literal_eval(x)["title"].strip()
+        )
+    )
+
+    f["league_normed"] = f["league"].astype(str).str.strip().str.upper()
+    u["league_normed"] = u["league"].astype(str).str.strip().str.upper()
+
+    u_sub = u[
+        [
+            "date",
+            "league_normed",
+            "home_team_normed",
+            "away_team_normed",
+            "xG_home",
+            "xG_away",
+        ]
+    ].copy()
+
+    f_sub = f[
+        [
+            "date",
+            "league",
+            "league_normed",
+            "home_team",
+            "away_team",
+            "home_goals",
+            "away_goals",
+            "bookie_home",
+            "bookie_draw",
+            "bookie_away",
+        ]
+    ].copy()
+
+    merged = f_sub.merge(
+        u_sub,
+        left_on=["date", "league_normed", "home_team", "away_team"],
+        right_on=["date", "league_normed", "home_team_normed", "away_team_normed"],
+        how="left",
+    )
+
+    merged["season"] = merged["date"].dt.year
+
+    avg_xg_home = (
+        merged[merged["xG_home"].notna()]
+        .groupby(["league_normed", "season"])["xG_home"]
+        .mean()
+        .reset_index()
+        .rename(columns={"xG_home": "avg_xg_home"})
+    )
+
+    avg_xg_away = (
+        merged[merged["xG_away"].notna()]
+        .groupby(["league_normed", "season"])["xG_away"]
+        .mean()
+        .reset_index()
+        .rename(columns={"xG_away": "avg_xg_away"})
+    )
+
+    merged = merged.merge(avg_xg_home, on=["league_normed", "season"], how="left")
+    merged = merged.merge(avg_xg_away, on=["league_normed", "season"], how="left")
+
+    mask_home = merged["xG_home"].isna()
+    merged.loc[mask_home, "xG_home"] = merged.loc[mask_home, "avg_xg_home"]
+
+    mask_away = merged["xG_away"].isna()
+    merged.loc[mask_away, "xG_away"] = merged.loc[mask_away, "avg_xg_away"]
+
+    merged["bookie_sum"] = (
+        1.0 / merged["bookie_home"]
+        + 1.0 / merged["bookie_draw"]
+        + 1.0 / merged["bookie_away"]
+    )
+    merged["bookie_prob_home"] = (1.0 / merged["bookie_home"]) / merged["bookie_sum"]
+    merged["bookie_prob_draw"] = (1.0 / merged["bookie_draw"]) / merged["bookie_sum"]
+    merged["bookie_prob_away"] = (1.0 / merged["bookie_away"]) / merged["bookie_sum"]
+
+    merged["result"] = np.select(
+        [
+            merged["home_goals"] > merged["away_goals"],
+            merged["home_goals"] < merged["away_goals"],
+        ],
+        ["H", "A"],
+        default="D",
+    )
+
+    merged = merged[
+        [
+            "date",
+            "league",
+            "home_team",
+            "away_team",
+            "home_goals",
+            "away_goals",
+            "bookie_home",
+            "bookie_draw",
+            "bookie_away",
+            "xG_home",
+            "xG_away",
+            "bookie_sum",
+            "bookie_prob_home",
+            "bookie_prob_draw",
+            "bookie_prob_away",
+            "result",
+        ]
+    ].copy()
+
+    Path("data/processed").mkdir(parents=True, exist_ok=True)
+
+    table_all = pa.Table.from_pandas(merged, preserve_index=False)
+    pq.write_table(table_all, "data/processed/merged.parquet")
+
+    model_input = merged.dropna(
+        subset=["xG_home", "xG_away", "bookie_home", "bookie_draw", "bookie_away"]
+    )
+
+    schema = pa.schema(
+        [
+            ("date", pa.timestamp("ns")),
+            ("home_team", pa.string()),
+            ("away_team", pa.string()),
+            ("home_goals", pa.int64()),
+            ("away_goals", pa.int64()),
+            ("bookie_home", pa.float64()),
+            ("bookie_draw", pa.float64()),
+            ("bookie_away", pa.float64()),
+            ("league", pa.string()),
+            ("xG_home", pa.float64()),
+            ("xG_away", pa.float64()),
+            ("bookie_sum", pa.float64()),
+            ("bookie_prob_home", pa.float64()),
+            ("bookie_prob_draw", pa.float64()),
+            ("bookie_prob_away", pa.float64()),
+            ("result", pa.string()),
+        ]
+    )
+
+    table_model = pa.Table.from_pandas(model_input, schema=schema, preserve_index=False)
+    pq.write_table(table_model, "data/processed/model_input.parquet")
+
+    with open("data/processed/model_input.txt", "w", encoding="utf-8") as fout:
+        fout.write(model_input.to_string(index=False))
+
+
+if __name__ == "__main__":
+    merge_sources()
+
+
+===== C:\Users\barte\OneDrive\Pulpit\Studia\ROK III\Semestr 2\football-prediction\scripts\model_predict.py =====
+import json, argparse, joblib, pandas as pd, numpy as np
+from pathlib import Path
+
+FEATURE_ORDER = [
+    "xG_home",
+    "xG_away",
+    "bookie_prob_home",
+    "bookie_prob_draw",
+    "bookie_prob_away",
+    "home_roll_xg_5",
+    "away_roll_xg_5",
+    "home_roll_gd_5",
+    "away_roll_gd_5",
+    "home_roll_form_5",
+    "away_roll_form_5",
+    "dow",
+    "month",
+    "home_days_since",
+    "away_days_since",
+]
+
+
+def load_features(args):
+    if args.features_file:
+        feats = json.loads(Path(args.features_file).read_text())
+    else:
+        feats = json.loads(args.features)
+    missing = [c for c in FEATURE_ORDER if c not in feats]
+    if missing:
+        raise ValueError(f"Missing features: {missing}")
+    return pd.DataFrame([[feats[c] for c in FEATURE_ORDER]], columns=FEATURE_ORDER)
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--algo", default="lgb", choices=["rf", "lgb"])
+    ap.add_argument("--model_path", default="models/final_model_lgb.pkl")
+    g = ap.add_mutually_exclusive_group(required=True)
+    g.add_argument("--features", help="inline JSON string with features")
+    g.add_argument("--features_file", help="path to JSON file with features")
+    args = ap.parse_args()
+
+    model = joblib.load(args.model_path)
+    X_new = load_features(args)
+    proba = model.predict_proba(X_new)[0]
+    pred = model.classes_[np.argmax(proba)]
+
+    print(f"Prediction: {pred}")
+    print(f"Probabilities (H/D/A): {dict(zip(model.classes_, proba.round(3)))}")
+
+
+if __name__ == "__main__":
+    main()
+
+
+===== C:\Users\barte\OneDrive\Pulpit\Studia\ROK III\Semestr 2\football-prediction\scripts\model_train.py =====
+import json, argparse, joblib, os
+import pandas as pd
+from src.data_loader import load_data
+from src.features import extract_features
+from src.model import train_model
+
+NUMERIC_FEATURES = [
+    "xG_home",
+    "xG_away",
+    "bookie_prob_home",
+    "bookie_prob_draw",
+    "bookie_prob_away",
+    "home_roll_xg_5",
+    "away_roll_xg_5",
+    "home_roll_gd_5",
+    "away_roll_gd_5",
+    "home_roll_form_5",
+    "away_roll_form_5",
+    "dow",
+    "month",
+    "home_days_since",
+    "away_days_since",
+]
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--algo", default="rf", choices=["rf", "lgb"])
+    parser.add_argument(
+        "--params", default=None, help="path to JSON with tuned hyper-params"
+    )
+    args = parser.parse_args()
+
+    df = extract_features(load_data()).dropna(subset=NUMERIC_FEATURES + ["result"])
+    X, y = df[NUMERIC_FEATURES], df["result"]
+
+    params = {}
+    if args.params:
+        with open(args.params) as f:
+            params = json.load(f)
+
+    model = train_model(X, y, algo=args.algo, params=params)
+
+    os.makedirs("models", exist_ok=True)
+    joblib.dump(model, f"models/final_model_{args.algo}.pkl")
+    print(f"Model saved to models/final_model_{args.algo}.pkl")
+
+
+if __name__ == "__main__":
+    main()
+
+
+===== C:\Users\barte\OneDrive\Pulpit\Studia\ROK III\Semestr 2\football-prediction\scripts\run_pipeline.py =====
+import argparse
+
+
+def cli():
+    p = argparse.ArgumentParser()
+    p.add_argument("--algo", default="rf", choices=["rf", "lgb"])
+    return p.parse_args()
+
+
+def run_pipeline():
+    args = cli()
+    df = extract_features(load_data())
+    df = df.dropna()
+    X = df.drop(columns=["result"])
+    y = df["result"]
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, test_size=0.2, stratify=y, random_state=42
+    )
+    model = train_model(X_train, y_train, algo=algo)
+    y_pred = model.predict(X_test)
+    evaluate_model(y_test, y_pred)
+    print(f"Done (algo = {args.algo})")
+
+
+if __name__ == "__main__":
+    args = cli()
+    run_pipeline(algo=args.algo)
+
+
+===== C:\Users\barte\OneDrive\Pulpit\Studia\ROK III\Semestr 2\football-prediction\scripts\tune_lgbm.py =====
+import json
+from pathlib import Path
+
+from src.data_loader import load_data
+from src.features import extract_features
+from src.model import lgb_grid_search
+
+
+if __name__ == "__main__":
+
+    NUMERIC_FEATURES = [
+        "xG_home",
+        "xG_away",
+        "bookie_prob_home",
+        "bookie_prob_draw",
+        "bookie_prob_away",
+        "home_roll_xg_5",
+        "away_roll_xg_5",
+        "home_roll_gd_5",
+        "away_roll_gd_5",
+        "home_roll_form_5",
+        "away_roll_form_5",
+        "dow",
+        "month",
+        "home_days_since",
+        "away_days_since",
+    ]
+
+    df = extract_features(load_data()).dropna()
+    X = df[NUMERIC_FEATURES]
+    y = df["result"]
+
+    best_params, best_score = lgb_grid_search(X, y)
+    print("Best CV score:", best_score)
+    Path("output").mkdir(exist_ok=True)
+    json.dump(best_params, open("output/lgb_best.json", "w"), indent=4)
+    print("Saved → output/lgb_best.json")
+
+
+===== C:\Users\barte\OneDrive\Pulpit\Studia\ROK III\Semestr 2\football-prediction\src\data_loader.py =====
+import pandas as pd
+
+
+def load_data(path: str = "data/processed/model_input.parquet") -> pd.DataFrame:
+    """
+    Loads the pre-filtered model input (only rows with complete xG + bookie odds).
+    """
+    return pd.read_parquet(path)
+
+
+===== C:\Users\barte\OneDrive\Pulpit\Studia\ROK III\Semestr 2\football-prediction\src\features.py =====
+import pandas as pd
+
+
+def extract_features(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Given the raw model_input DataFrame, compute:
+      - xg_diff, goal_diff
+      - rolling averages (last 5 matches) of xg_diff, goal_diff
+      - form (sum of points last 5 matches)
+      - temporal features: day of week, month, days since last match
+    """
+    df = df.sort_values("date").copy()
+
+    # 1) basic diffs & points
+    df["xg_diff"] = df["xG_home"] - df["xG_away"]
+    df["goal_diff"] = df["home_goals"] - df["away_goals"]
+    df["home_pts"] = df["result"].map({"H": 3, "D": 1, "A": 0})
+    df["away_pts"] = df["result"].map({"H": 0, "D": 1, "A": 3})
+
+    window = 5
+
+    # 2) rolling features (last 5 matches per team) — use transform to keep index alignment
+    df["home_roll_xg_5"] = df.groupby("home_team")["xg_diff"].transform(
+        lambda x: x.shift().rolling(window).mean()
+    )
+    df["away_roll_xg_5"] = df.groupby("away_team")["xg_diff"].transform(
+        lambda x: x.shift().rolling(window).mean()
+    )
+    df["home_roll_gd_5"] = df.groupby("home_team")["goal_diff"].transform(
+        lambda x: x.shift().rolling(window).mean()
+    )
+    df["away_roll_gd_5"] = df.groupby("away_team")["goal_diff"].transform(
+        lambda x: x.shift().rolling(window).mean()
+    )
+    df["home_roll_form_5"] = df.groupby("home_team")["home_pts"].transform(
+        lambda x: x.shift().rolling(window).sum()
+    )
+    df["away_roll_form_5"] = df.groupby("away_team")["away_pts"].transform(
+        lambda x: x.shift().rolling(window).sum()
+    )
+
+    # 3) temporal features
+    df["dow"] = df["date"].dt.weekday  # 0=Monday…6=Sunday
+    df["month"] = df["date"].dt.month
+
+    # 4) days since last match
+    df["home_prev_date"] = df.groupby("home_team")["date"].shift(1)
+    df["away_prev_date"] = df.groupby("away_team")["date"].shift(1)
+    df["home_days_since"] = (df["date"] - df["home_prev_date"]).dt.days
+    df["away_days_since"] = (df["date"] - df["away_prev_date"]).dt.days
+
+    # 5) drop intermediate helper cols
+    df = df.drop(columns=["home_prev_date", "away_prev_date"])
+
+    return df
+
+
+===== C:\Users\barte\OneDrive\Pulpit\Studia\ROK III\Semestr 2\football-prediction\src\metrics.py =====
+import os
+import json
+from sklearn.metrics import (
+    classification_report,
+    confusion_matrix,
+    ConfusionMatrixDisplay,
+)
+import matplotlib.pyplot as plt
+
+
+def save_classification_report_txt(y_true, y_pred, path="output/report.txt"):
+    report = classification_report(y_true, y_pred)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w") as f:
+        f.write(report)
+
+
+def save_classification_report_json(y_true, y_pred, path="output/metrics.json"):
+    report_dict = classification_report(y_true, y_pred, output_dict=True)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w") as f:
+        json.dump(report_dict, f, indent=4)
+
+
+def save_confusion_matrix_plot(y_true, y_pred, path="output/confusion_matrix.png"):
+    cm = confusion_matrix(y_true, y_pred, labels=["H", "D", "A"])
+    disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=["H", "D", "A"])
+    disp.plot(cmap=plt.cm.Blues)
+    plt.title("Confusion Matrix")
+    plt.tight_layout()
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    plt.savefig(path)
+    plt.close()
+
+
+===== C:\Users\barte\OneDrive\Pulpit\Studia\ROK III\Semestr 2\football-prediction\src\model.py =====
+# src/model.py
+from typing import Literal, Tuple, Dict, Any
+
+import lightgbm as lgb
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import classification_report, f1_score
+from sklearn.model_selection import GridSearchCV
+
+
+Algo = Literal["rf", "lgb"]
+
+
+def _build_rf(params: Dict[str, Any] | None = None) -> RandomForestClassifier:
+    default = dict(
+        n_estimators=300,
+        max_depth=8,
+        min_samples_leaf=3,
+        class_weight="balanced",
+        random_state=42,
+        n_jobs=-1,
+    )
+    if params:
+        default.update(params)
+    return RandomForestClassifier(**default)
+
+
+def _build_lgb(params: Dict[str, Any] | None = None) -> lgb.LGBMClassifier:
+    default = dict(
+        objective="multiclass",
+        num_class=3,
+        n_estimators=400,
+        learning_rate=0.05,
+        max_depth=-1,
+        subsample=0.8,
+        colsample_bytree=0.8,
+        random_state=42,
+        n_jobs=-1,
+    )
+    if params:
+        default.update(params)
+    return lgb.LGBMClassifier(**default)
+
+
+def get_model(algo: Algo = "rf", params: Dict[str, Any] | None = None):
+    if algo == "rf":
+        return _build_rf(params)
+    if algo == "lgb":
+        return _build_lgb(params)
+    raise ValueError(f"Unknown algo: {algo}")
+
+
+def train_model(X, y, algo: Algo = "rf", params=None):
+    model = get_model(algo, params)
+    model.fit(X, y)
+    return model
+
+
+def evaluate_model(y_true, y_pred, verbose: bool = True) -> Dict[str, float]:
+    if verbose:
+        print(classification_report(y_true, y_pred))
+    return {
+        "macro_f1": f1_score(y_true, y_pred, average="macro"),
+        "accuracy": (y_true == y_pred).mean(),
+    }
+
+
+lgb_param_grid = {
+    "num_leaves": [31, 63],
+    "max_depth": [-1, 8],
+    "learning_rate": [0.05, 0.1],
+    "n_estimators": [300, 600],
+    "subsample": [0.8, 1.0],
+    "colsample_bytree": [0.8, 1.0],
+}
+
+
+def lgb_grid_search(X, y, cv=3, scoring="f1_macro") -> Tuple[Dict[str, Any], float]:
+    clf = _build_lgb()
+    gs = GridSearchCV(
+        clf,
+        lgb_param_grid,
+        cv=cv,
+        scoring=scoring,
+        n_jobs=-1,
+        verbose=1,
+    )
+    gs.fit(X, y)
+    return gs.best_params_, gs.best_score_
+
+
+===== C:\Users\barte\OneDrive\Pulpit\Studia\ROK III\Semestr 2\football-prediction\src\pipeline.py =====
+from src.data_loader import load_data
+from src.features import extract_features
+from src.model import train_model, evaluate_model
+from src.metrics import (
+    save_classification_report_txt,
+    save_classification_report_json,
+    save_confusion_matrix_plot,
+)
+from sklearn.model_selection import train_test_split
+
+
+def run_pipeline():
+    # 1) load the model_input.parquet (already filtered for xG + odds)
+    df = load_data("data/processed/model_input.parquet")
+
+    # 2) compute all features (incl. rolling, temporal, form…)
+    df = extract_features(df)
+
+    # 3) drop any rows still with NA (e.g. first few matches per team)
+    df = df.dropna(
+        subset=[
+            "xG_home",
+            "xG_away",
+            "bookie_prob_home",
+            "bookie_prob_draw",
+            "bookie_prob_away",
+            # new rolled ones:
+            "home_roll_xg_5",
+            "away_roll_xg_5",
+            "home_roll_gd_5",
+            "away_roll_gd_5",
+            "home_roll_form_5",
+            "away_roll_form_5",
+            "home_days_since",
+            "away_days_since",
+        ]
+    )
+
+    # 4) select your model inputs & target
+    X = df[
+        [
+            # original
+            "xG_home",
+            "xG_away",
+            "bookie_prob_home",
+            "bookie_prob_draw",
+            "bookie_prob_away",
+            # new rolling
+            "home_roll_xg_5",
+            "away_roll_xg_5",
+            "home_roll_gd_5",
+            "away_roll_gd_5",
+            "home_roll_form_5",
+            "away_roll_form_5",
+            # temporal
+            "dow",
+            "month",
+            "home_days_since",
+            "away_days_since",
+        ]
+    ]
+    y = df["result"]
+
+    # 5) stratified train‐test split (keep H/D/A proportions)
+    X_train, X_test, y_train, y_test = train_test_split(
+        X,
+        y,
+        test_size=0.2,
+        stratify=y,
+        random_state=42,
+    )
+
+    # 6) train & predict
+    model = train_model(X_train, y_train)
+    y_pred = model.predict(X_test)
+
+    # 7) evaluate & save outputs
+    evaluate_model(y_test, y_pred)
+    save_classification_report_txt(y_test, y_pred)
+    save_classification_report_json(y_test, y_pred)
+    save_confusion_matrix_plot(y_test, y_pred)
+
+    print("🚀 Pipeline finished successfully.")
+
+
+if __name__ == "__main__":
+    run_pipeline()

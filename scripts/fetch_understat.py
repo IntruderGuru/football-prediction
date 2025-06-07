@@ -1,4 +1,6 @@
-import pandas as pd, ast, numpy as np
+import pandas as pd
+import ast
+import numpy as np
 from pathlib import Path
 import pyarrow.parquet as pq
 import pyarrow as pa
@@ -73,7 +75,7 @@ def merge_sources() -> None:
         default="D",
     )
 
-    merged["date"] = pd.to_datetime(merged["date"], errors="coerce")  # datetime64
+    merged["date"] = pd.to_datetime(merged["date"], errors="coerce")
     num_cols = [
         "home_goals",
         "away_goals",
