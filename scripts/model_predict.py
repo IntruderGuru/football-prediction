@@ -1,57 +1,70 @@
-import json
+# scripts/model_predict.py
 import argparse
+import json
 import joblib
-import pandas as pd
-import numpy as np
 from pathlib import Path
 
-FEATURE_ORDER = [
-    "xG_home",
-    "xG_away",
-    "bookie_prob_home",
-    "bookie_prob_draw",
-    "bookie_prob_away",
-    "home_roll_xg_5",
-    "away_roll_xg_5",
-    "home_roll_gd_5",
-    "away_roll_gd_5",
-    "home_roll_form_5",
-    "away_roll_form_5",
-    "dow",
-    "month",
-    "home_days_since",
-    "away_days_since",
-]
+import numpy as np
+import pandas as pd
 
 
-def load_features(args):
-    if args.features_file:
-        feats = json.loads(Path(args.features_file).read_text())
-    else:
-        feats = json.loads(args.features)
-    missing = [c for c in FEATURE_ORDER if c not in feats]
+# ──────────────────── helpery ─────────────────────
+def load_schema(schema_path: str) -> list[str]:
+    path = Path(schema_path)
+    if not path.exists():
+        raise FileNotFoundError(f"❌ Brak pliku schematu kolumn: {path}")
+    return json.loads(path.read_text())
+
+
+def build_feature_df(raw_json: str | Path, schema: list[str]) -> pd.DataFrame:
+    """Z surowego JSON-a (inline lub plik) → DataFrame w kolejności schema."""
+    # odczyt
+    feats = (
+        json.loads(raw_json.read_text())
+        if isinstance(raw_json, Path)
+        else json.loads(raw_json)
+    )
+
+    # walidacja ➜ brakujące kolumny
+    missing = [c for c in schema if c not in feats]
     if missing:
-        raise ValueError(f"Missing features: {missing}")
-    return pd.DataFrame([[feats[c] for c in FEATURE_ORDER]], columns=FEATURE_ORDER)
+        raise ValueError(f"Brakuje feature’ów: {missing}")
+
+    return pd.DataFrame([[feats[c] for c in schema]], columns=schema)
 
 
-def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--algo", default="lgb", choices=["rf", "lgb"])
-    ap.add_argument("--model_path", default="models/final_model_lgb.pkl")
+# ────────────────────────── główna funkcja ───────────────────────
+def main() -> None:
+    ap = argparse.ArgumentParser(description="Inferencja – pojedynczy mecz")
+    ap.add_argument("--model", default="output/final_model_lgb.pkl")
+    ap.add_argument("--schema", default="output/feature_schema.json")
+
     g = ap.add_mutually_exclusive_group(required=True)
-    g.add_argument("--features", help="inline JSON string with features")
-    g.add_argument("--features_file", help="path to JSON file with features")
+    g.add_argument("--features", help="inline JSON, np. '{\"xG_home\":1.4, …}'")
+
+    g.add_argument("--features-file", help="plik JSON z feature’ami")
+
     args = ap.parse_args()
 
-    model = joblib.load(args.model_path)
-    X_new = load_features(args)
-    proba = model.predict_proba(X_new)[0]
+    # ① ładujemy artefakty
+    schema = load_schema(args.schema)
+    model = joblib.load(args.model)
+
+    # ② przygotowujemy wektor cech
+    X = (
+        build_feature_df(Path(args.features_file), schema)
+        if args.features_file
+        else build_feature_df(args.features, schema)
+    )
+
+    # ③ predykcja
+    proba = model.predict_proba(X)[0]
     pred = model.classes_[np.argmax(proba)]
 
-    print(f"Prediction: {pred}")
-    print(f"Probabilities (H/D/A): {dict(zip(model.classes_, proba.round(3)))}")
+    # ④ wynik
+    print(f"Prediction  : {pred}")
+    print(f"Probabilities: {dict(zip(model.classes_, proba.round(3)))}")
 
 
-if __name__ == "__main__":
+if __name__ == "__main__":  # pragma: no cover
     main()

@@ -5,24 +5,7 @@ import os
 from src.data_loader import load_data
 from src.features import extract_features
 from src.model import train_model
-
-NUMERIC_FEATURES = [
-    "xG_home",
-    "xG_away",
-    "bookie_prob_home",
-    "bookie_prob_draw",
-    "bookie_prob_away",
-    "home_roll_xg_5",
-    "away_roll_xg_5",
-    "home_roll_gd_5",
-    "away_roll_gd_5",
-    "home_roll_form_5",
-    "away_roll_form_5",
-    "dow",
-    "month",
-    "home_days_since",
-    "away_days_since",
-]
+from src.constants import FEATURE_COLUMNS
 
 
 def main():
@@ -33,8 +16,8 @@ def main():
     )
     args = parser.parse_args()
 
-    df = extract_features(load_data()).dropna(subset=NUMERIC_FEATURES + ["result"])
-    X, y = df[NUMERIC_FEATURES], df["result"]
+    df = extract_features(load_data()).dropna(subset=FEATURE_COLUMNS + ["result"])
+    X, y = df[FEATURE_COLUMNS], df["result"]
 
     params = {}
     if args.params:

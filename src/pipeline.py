@@ -1,87 +1,82 @@
+import argparse
+import json
+import logging
+from pathlib import Path
+
+import joblib
+from sklearn.ensemble import StackingClassifier
+from sklearn.model_selection import TimeSeriesSplit
+
+from src.constants import FEATURE_COLUMNS
 from src.data_loader import load_data
 from src.features import extract_features
-from src.model import train_model, evaluate_model
+from src.model import train_model, evaluate_model, get_model
 from src.metrics import (
     save_classification_report_txt,
     save_classification_report_json,
     save_confusion_matrix_plot,
 )
-from sklearn.model_selection import train_test_split
+
+logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
+logger = logging.getLogger("footpred")
 
 
-def run_pipeline():
-    # 1) load the model_input.parquet (already filtered for xG + odds)
-    df = load_data("data/processed/model_input.parquet")
+def run_pipeline(
+    *,
+    algo: str = "lgb",  # "rf", "cat" albo specjalne "stack"
+    input_path: str = "data/processed/model_input.parquet",
+    output_dir: str = "output",
+) -> None:
+    logger.info("Ładowanie danych → %s", input_path)
+    df = extract_features(load_data(input_path)).dropna(subset=FEATURE_COLUMNS)
+    X, y = df[FEATURE_COLUMNS], df["result"]
 
-    # 2) compute all features (incl. rolling, temporal, form…)
-    df = extract_features(df)
-
-    # 3) drop any rows still with NA (e.g. first few matches per team)
-    df = df.dropna(
-        subset=[
-            "xG_home",
-            "xG_away",
-            "bookie_prob_home",
-            "bookie_prob_draw",
-            "bookie_prob_away",
-            # new rolled ones:
-            "home_roll_xg_5",
-            "away_roll_xg_5",
-            "home_roll_gd_5",
-            "away_roll_gd_5",
-            "home_roll_form_5",
-            "away_roll_form_5",
-            "home_days_since",
-            "away_days_since",
-        ]
+    # TimeSeriesSplit — ostatni fold traktujemy jako test
+    cv = TimeSeriesSplit(n_splits=5)
+    train_idx, test_idx = list(cv.split(X))[-1]
+    X_tr, X_te, y_tr, y_te = (
+        X.iloc[train_idx],
+        X.iloc[test_idx],
+        y.iloc[train_idx],
+        y.iloc[test_idx],
     )
 
-    # 4) select your model inputs & target
-    X = df[
-        [
-            # original
-            "xG_home",
-            "xG_away",
-            "bookie_prob_home",
-            "bookie_prob_draw",
-            "bookie_prob_away",
-            # new rolling
-            "home_roll_xg_5",
-            "away_roll_xg_5",
-            "home_roll_gd_5",
-            "away_roll_gd_5",
-            "home_roll_form_5",
-            "away_roll_form_5",
-            # temporal
-            "dow",
-            "month",
-            "home_days_since",
-            "away_days_since",
+    # wybór modelu
+    if algo == "stack":
+        base = [
+            ("lgb", get_model("lgb")),
+            ("cat", get_model("cat")),
+            ("rf", get_model("rf")),
         ]
-    ]
-    y = df["result"]
+        model = StackingClassifier(
+            estimators=base,
+            final_estimator=get_model("lgb"),
+            passthrough=True,
+            n_jobs=-1,
+        ).fit(X_tr, y_tr)
+    else:
+        model = train_model(X_tr, y_tr, algo=algo)
 
-    # 5) stratified train‐test split (keep H/D/A proportions)
-    X_train, X_test, y_train, y_test = train_test_split(
-        X,
-        y,
-        test_size=0.2,
-        stratify=y,
-        random_state=42,
-    )
+    # ewaluacja
+    y_pred = model.predict(X_te)
+    metrics = evaluate_model(y_te, y_pred, verbose=False)
+    logger.info("Acc %.3f | macro‑F1 %.3f", metrics["accuracy"], metrics["macro_f1"])
 
-    # 6) train & predict
-    model = train_model(X_train, y_train)
-    y_pred = model.predict(X_test)
-
-    # 7) evaluate & save outputs
-    evaluate_model(y_test, y_pred)
-    save_classification_report_txt(y_test, y_pred)
-    save_classification_report_json(y_test, y_pred)
-    save_confusion_matrix_plot(y_test, y_pred)
-
-    print("🚀 Pipeline finished successfully.")
+    # zapisz artefakty
+    out = Path(output_dir)
+    out.mkdir(exist_ok=True, parents=True)
+    joblib.dump(model, out / f"final_model_{algo}.pkl")
+    (out / "feature_schema.json").write_text(json.dumps(FEATURE_COLUMNS, indent=2))
+    save_confusion_matrix_plot(y_te, y_pred, out / "confusion_matrix.png")
+    save_classification_report_txt(y_te, y_pred, out / "report.txt")
+    save_classification_report_json(y_te, y_pred, out / "metrics.json")
+    logger.info("Artefakty zapisane w %s", out.resolve())
 
 
 if __name__ == "__main__":
-    run_pipeline()
+    p = argparse.ArgumentParser()
+    p.add_argument("--algo", choices=["rf", "lgb", "cat", "stack"], default="stack")
+    p.add_argument("--input", default="data/processed/model_input.parquet")
+    p.add_argument("--output", default="output")
+    args = p.parse_args()
+    run_pipeline(algo=args.algo, input_path=args.input, output_dir=args.output)

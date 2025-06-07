@@ -4,6 +4,7 @@ import numpy as np
 from pathlib import Path
 import pyarrow as pa
 import pyarrow.parquet as pq
+from src.constants import TEAM_MAP
 
 
 def merge_sources():
@@ -29,139 +30,13 @@ def merge_sources():
     u["xG_home"] = u["xG"].apply(lambda s: parse_json(s, "h", float))
     u["xG_away"] = u["xG"].apply(lambda s: parse_json(s, "a", float))
 
-    team_map = {
-        # ——— Premier League / Championship
-        "Manchester United": "Man United",
-        "Manchester City": "Man City",
-        "Wolverhampton Wanderers": "Wolves",
-        "Brighton & Hove Albion": "Brighton",
-        "Tottenham Hotspur": "Tottenham",
-        "West Ham United": "West Ham",
-        "Newcastle United": "Newcastle",
-        "Nottingham Forest": "Nott'm Forest",
-        "Sheffield United": "Sheffield United",
-        "Crystal Palace": "Crystal Palace",
-        "Liverpool": "Liverpool",
-        "Chelsea": "Chelsea",
-        "Arsenal": "Arsenal",
-        "Everton": "Everton",
-        "Bournemouth": "Bournemouth",
-        "Burnley": "Burnley",
-        "Southampton": "Southampton",
-        "Leicester": "Leicester",
-        "Leeds": "Leeds",
-        "Aston Villa": "Aston Villa",
-        "Watford": "Watford",
-        "Wolves": "Wolves",
-        "West Bromwich Albion": "West Brom",
-        "Fulham": "Fulham",
-        # ——— La Liga
-        "Athletic Club": "Ath Bilbao",
-        "Atletico Madrid": "Ath Madrid",
-        "Real Madrid": "Real Madrid",
-        "FC Barcelona": "Barcelona",
-        "Real Sociedad": "Sociedad",
-        "Real Betis": "Betis",
-        "Real Valladolid": "Valladolid",
-        "Espanyol": "Espanol",
-        "Granada": "Granada",
-        "Celta Vigo": "Celta",
-        "Sevilla": "Sevilla",
-        "Valencia": "Valencia",
-        "Villarreal": "Villarreal",
-        "Getafe": "Getafe",
-        "Levante": "Levante",
-        "Alaves": "Alaves",
-        "Mallorca": "Mallorca",
-        "Elche": "Elche",
-        "Cadiz": "Cadiz",
-        "Eibar": "Eibar",
-        "Osasuna": "Osasuna",
-        # ——— Ligue 1
-        "Paris Saint Germain": "Paris SG",
-        "Olympique Marseille": "Marseille",
-        "Lyon": "Lyon",
-        "Lille": "Lille",
-        "AS Monaco": "Monaco",
-        "Nice": "Nice",
-        "Stade Rennais": "Rennes",
-        "Nantes": "Nantes",
-        "Strasbourg": "Strasbourg",
-        "Brest": "Brest",
-        "Ajaccio": "Ajaccio",
-        "Nimes": "Nimes",
-        "Montpellier": "Montpellier",
-        "Lorient": "Lorient",
-        "Bordeaux": "Bordeaux",
-        "Reims": "Reims",
-        "Amiens": "Amiens",
-        "Angers": "Angers",
-        "Dijon": "Dijon",
-        "Clermont Foot": "Clermont",
-        "Metz": "Metz",
-        "Lens": "Lens",
-        # ——— Serie A
-        "Inter Milan": "Inter",
-        "AC Milan": "Milan",
-        "Juventus": "Juventus",
-        "Atalanta": "Atalanta",
-        "Napoli": "Napoli",
-        "Roma": "Roma",
-        "SS Lazio": "Lazio",
-        "Fiorentina": "Fiorentina",
-        "Torino": "Torino",
-        "Udinese": "Udinese",
-        "Bologna": "Bologna",
-        "Empoli": "Empoli",
-        "Sassuolo": "Sassuolo",
-        "Cagliari": "Cagliari",
-        "Sampdoria": "Sampdoria",
-        "Verona": "Verona",
-        "Genoa": "Genoa",
-        "Salernitana": "Salernitana",
-        "Brescia": "Brescia",
-        "Lecce": "Lecce",
-        "Monza": "Monza",
-        # ——— Bundesliga
-        "Bayern Munich": "Bayern Munich",
-        "Borussia Dortmund": "Dortmund",
-        "Bayer Leverkusen": "Leverkusen",
-        "RB Leipzig": "RB Leipzig",
-        "Borussia M.Gladbach": "M'gladbach",
-        "VfB Stuttgart": "Stuttgart",
-        "Eintracht Frankfurt": "Ein Frankfurt",
-        "FC Cologne": "FC Koln",
-        "Union Berlin": "Union Berlin",
-        "Freiburg": "Freiburg",
-        "Hertha Berlin": "Hertha",
-        "Hoffenheim": "Hoffenheim",
-        "Wolfsburg": "Wolfsburg",
-        "Mainz 05": "Mainz",
-        "Augsburg": "Augsburg",
-        "Schalke 04": "Schalke 04",
-        "Werder Bremen": "Werder Bremen",
-        "Fortuna Duesseldorf": "Fortuna Dusseldorf",
-        "Greuther Fuerth": "Greuther Furth",
-        "FC Heidenheim": "Heidenheim",
-        "Arminia Bielefeld": "Bielefeld",
-        # ——— Inne
-        "Holstein Kiel": "Holstein Kiel",
-        "Ipswich": "Ipswich",
-        "Como": "Como",
-        "Parma Calcio 1913": "Parma",
-        "RasenBallsport Leipzig": "RB Leipzig",
-        "Rayo Vallecano": "Vallecano",
-        "Saint-Etienne": "St Etienne",
-        "St. Pauli": "St. Pauli",
-    }
-
     u["home_team_normed"] = u["h"].apply(
-        lambda x: team_map.get(
+        lambda x: TEAM_MAP.get(
             ast.literal_eval(x)["title"].strip(), ast.literal_eval(x)["title"].strip()
         )
     )
     u["away_team_normed"] = u["a"].apply(
-        lambda x: team_map.get(
+        lambda x: TEAM_MAP.get(
             ast.literal_eval(x)["title"].strip(), ast.literal_eval(x)["title"].strip()
         )
     )

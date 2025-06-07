@@ -19,6 +19,7 @@ bs4
 understat
 fastparquet
 joblib
+catboost
 
 
 ===== C:\Users\barte\OneDrive\Pulpit\Studia\ROK III\Semestr 2\football-prediction\setup_guide.txt =====
@@ -42,13 +43,13 @@ jupyter notebook
 ===== C:\Users\barte\OneDrive\Pulpit\Studia\ROK III\Semestr 2\football-prediction\output\report.txt =====
               precision    recall  f1-score   support
 
-           A       0.59      0.72      0.65       513
-           D       0.35      0.16      0.22       410
-           H       0.66      0.77      0.71       699
+           A       0.58      0.65      0.61       411
+           D       0.35      0.22      0.27       356
+           H       0.63      0.72      0.67       584
 
-    accuracy                           0.60      1622
-   macro avg       0.54      0.55      0.53      1622
-weighted avg       0.56      0.60      0.57      1622
+    accuracy                           0.57      1351
+   macro avg       0.52      0.53      0.52      1351
+weighted avg       0.54      0.57      0.55      1351
 
 
 ===== C:\Users\barte\OneDrive\Pulpit\Studia\ROK III\Semestr 2\football-prediction\scripts\fetch_football_data_uk.py =====
@@ -88,10 +89,13 @@ if __name__ == "__main__":
 
 
 ===== C:\Users\barte\OneDrive\Pulpit\Studia\ROK III\Semestr 2\football-prediction\scripts\fetch_understat.py =====
-import pandas as pd, ast, numpy as np
+import pandas as pd
+import ast
+import numpy as np
 from pathlib import Path
 import pyarrow.parquet as pq
 import pyarrow as pa
+from src.constants import TEAM_MAP
 
 
 def merge_sources() -> None:
@@ -111,33 +115,8 @@ def merge_sources() -> None:
     u["xG_home"] = u["xG"].apply(lambda g: float(g["h"]))
     u["xG_away"] = u["xG"].apply(lambda g: float(g["a"]))
 
-    team_map = {
-        "Manchester United": "Man United",
-        "Manchester City": "Man City",
-        "Wolverhampton Wanderers": "Wolves",
-        "Brighton & Hove Albion": "Brighton",
-        "Tottenham Hotspur": "Tottenham",
-        "West Ham United": "West Ham",
-        "Newcastle United": "Newcastle",
-        "Nottingham Forest": "Nott'm Forest",
-        "Sheffield United": "Sheffield Utd",
-        "Leeds United": "Leeds",
-        "Leicester City": "Leicester",
-        "Aston Villa": "Aston Villa",
-        "Crystal Palace": "Crystal Palace",
-        "Everton": "Everton",
-        "Arsenal": "Arsenal",
-        "Liverpool": "Liverpool",
-        "Chelsea": "Chelsea",
-        "Southampton": "Southampton",
-        "Burnley": "Burnley",
-        "Bournemouth": "Bournemouth",
-        "Watford": "Watford",
-        "Brentford": "Brentford",
-        "Fulham": "Fulham",
-    }
-    u["home_team"] = u["h"].apply(lambda d: team_map.get(d["title"], d["title"]))
-    u["away_team"] = u["a"].apply(lambda d: team_map.get(d["title"], d["title"]))
+    u["home_team"] = u["h"].apply(lambda d: TEAM_MAP.get(d["title"], d["title"]))
+    u["away_team"] = u["a"].apply(lambda d: TEAM_MAP.get(d["title"], d["title"]))
 
     merged = f.merge(
         u[["date", "league", "home_team", "away_team", "xG_home", "xG_away"]],
@@ -192,14 +171,8 @@ if __name__ == "__main__":
 ===== C:\Users\barte\OneDrive\Pulpit\Studia\ROK III\Semestr 2\football-prediction\scripts\merge_football_data.py =====
 import pandas as pd, numpy as np, re, itertools
 from pathlib import Path
+from src.constants import DIV_MAP
 
-DIV_MAP = {
-    "E0": "EPL",
-    "SP1": "LALIGA",
-    "D1": "BUNDESLIGA",
-    "I1": "SERIEA",
-    "F1": "LIGUE1",
-}
 RAW = Path("data/raw")
 
 
@@ -257,6 +230,7 @@ import numpy as np
 from pathlib import Path
 import pyarrow as pa
 import pyarrow.parquet as pq
+from src.constants import TEAM_MAP
 
 
 def merge_sources():
@@ -282,139 +256,13 @@ def merge_sources():
     u["xG_home"] = u["xG"].apply(lambda s: parse_json(s, "h", float))
     u["xG_away"] = u["xG"].apply(lambda s: parse_json(s, "a", float))
 
-    team_map = {
-        # ——— Premier League / Championship
-        "Manchester United": "Man United",
-        "Manchester City": "Man City",
-        "Wolverhampton Wanderers": "Wolves",
-        "Brighton & Hove Albion": "Brighton",
-        "Tottenham Hotspur": "Tottenham",
-        "West Ham United": "West Ham",
-        "Newcastle United": "Newcastle",
-        "Nottingham Forest": "Nott'm Forest",
-        "Sheffield United": "Sheffield United",
-        "Crystal Palace": "Crystal Palace",
-        "Liverpool": "Liverpool",
-        "Chelsea": "Chelsea",
-        "Arsenal": "Arsenal",
-        "Everton": "Everton",
-        "Bournemouth": "Bournemouth",
-        "Burnley": "Burnley",
-        "Southampton": "Southampton",
-        "Leicester": "Leicester",
-        "Leeds": "Leeds",
-        "Aston Villa": "Aston Villa",
-        "Watford": "Watford",
-        "Wolves": "Wolves",
-        "West Bromwich Albion": "West Brom",
-        "Fulham": "Fulham",
-        # ——— La Liga
-        "Athletic Club": "Ath Bilbao",
-        "Atletico Madrid": "Ath Madrid",
-        "Real Madrid": "Real Madrid",
-        "FC Barcelona": "Barcelona",
-        "Real Sociedad": "Sociedad",
-        "Real Betis": "Betis",
-        "Real Valladolid": "Valladolid",
-        "Espanyol": "Espanol",
-        "Granada": "Granada",
-        "Celta Vigo": "Celta",
-        "Sevilla": "Sevilla",
-        "Valencia": "Valencia",
-        "Villarreal": "Villarreal",
-        "Getafe": "Getafe",
-        "Levante": "Levante",
-        "Alaves": "Alaves",
-        "Mallorca": "Mallorca",
-        "Elche": "Elche",
-        "Cadiz": "Cadiz",
-        "Eibar": "Eibar",
-        "Osasuna": "Osasuna",
-        # ——— Ligue 1
-        "Paris Saint Germain": "Paris SG",
-        "Olympique Marseille": "Marseille",
-        "Lyon": "Lyon",
-        "Lille": "Lille",
-        "AS Monaco": "Monaco",
-        "Nice": "Nice",
-        "Stade Rennais": "Rennes",
-        "Nantes": "Nantes",
-        "Strasbourg": "Strasbourg",
-        "Brest": "Brest",
-        "Ajaccio": "Ajaccio",
-        "Nimes": "Nimes",
-        "Montpellier": "Montpellier",
-        "Lorient": "Lorient",
-        "Bordeaux": "Bordeaux",
-        "Reims": "Reims",
-        "Amiens": "Amiens",
-        "Angers": "Angers",
-        "Dijon": "Dijon",
-        "Clermont Foot": "Clermont",
-        "Metz": "Metz",
-        "Lens": "Lens",
-        # ——— Serie A
-        "Inter Milan": "Inter",
-        "AC Milan": "Milan",
-        "Juventus": "Juventus",
-        "Atalanta": "Atalanta",
-        "Napoli": "Napoli",
-        "Roma": "Roma",
-        "SS Lazio": "Lazio",
-        "Fiorentina": "Fiorentina",
-        "Torino": "Torino",
-        "Udinese": "Udinese",
-        "Bologna": "Bologna",
-        "Empoli": "Empoli",
-        "Sassuolo": "Sassuolo",
-        "Cagliari": "Cagliari",
-        "Sampdoria": "Sampdoria",
-        "Verona": "Verona",
-        "Genoa": "Genoa",
-        "Salernitana": "Salernitana",
-        "Brescia": "Brescia",
-        "Lecce": "Lecce",
-        "Monza": "Monza",
-        # ——— Bundesliga
-        "Bayern Munich": "Bayern Munich",
-        "Borussia Dortmund": "Dortmund",
-        "Bayer Leverkusen": "Leverkusen",
-        "RB Leipzig": "RB Leipzig",
-        "Borussia M.Gladbach": "M'gladbach",
-        "VfB Stuttgart": "Stuttgart",
-        "Eintracht Frankfurt": "Ein Frankfurt",
-        "FC Cologne": "FC Koln",
-        "Union Berlin": "Union Berlin",
-        "Freiburg": "Freiburg",
-        "Hertha Berlin": "Hertha",
-        "Hoffenheim": "Hoffenheim",
-        "Wolfsburg": "Wolfsburg",
-        "Mainz 05": "Mainz",
-        "Augsburg": "Augsburg",
-        "Schalke 04": "Schalke 04",
-        "Werder Bremen": "Werder Bremen",
-        "Fortuna Duesseldorf": "Fortuna Dusseldorf",
-        "Greuther Fuerth": "Greuther Furth",
-        "FC Heidenheim": "Heidenheim",
-        "Arminia Bielefeld": "Bielefeld",
-        # ——— Inne
-        "Holstein Kiel": "Holstein Kiel",
-        "Ipswich": "Ipswich",
-        "Como": "Como",
-        "Parma Calcio 1913": "Parma",
-        "RasenBallsport Leipzig": "RB Leipzig",
-        "Rayo Vallecano": "Vallecano",
-        "Saint-Etienne": "St Etienne",
-        "St. Pauli": "St. Pauli",
-    }
-
     u["home_team_normed"] = u["h"].apply(
-        lambda x: team_map.get(
+        lambda x: TEAM_MAP.get(
             ast.literal_eval(x)["title"].strip(), ast.literal_eval(x)["title"].strip()
         )
     )
     u["away_team_normed"] = u["a"].apply(
-        lambda x: team_map.get(
+        lambda x: TEAM_MAP.get(
             ast.literal_eval(x)["title"].strip(), ast.literal_eval(x)["title"].strip()
         )
     )
@@ -563,85 +411,87 @@ if __name__ == "__main__":
 
 
 ===== C:\Users\barte\OneDrive\Pulpit\Studia\ROK III\Semestr 2\football-prediction\scripts\model_predict.py =====
-import json, argparse, joblib, pandas as pd, numpy as np
+# scripts/model_predict.py
+import argparse
+import json
+import joblib
 from pathlib import Path
 
-FEATURE_ORDER = [
-    "xG_home",
-    "xG_away",
-    "bookie_prob_home",
-    "bookie_prob_draw",
-    "bookie_prob_away",
-    "home_roll_xg_5",
-    "away_roll_xg_5",
-    "home_roll_gd_5",
-    "away_roll_gd_5",
-    "home_roll_form_5",
-    "away_roll_form_5",
-    "dow",
-    "month",
-    "home_days_since",
-    "away_days_since",
-]
+import numpy as np
+import pandas as pd
 
 
-def load_features(args):
-    if args.features_file:
-        feats = json.loads(Path(args.features_file).read_text())
-    else:
-        feats = json.loads(args.features)
-    missing = [c for c in FEATURE_ORDER if c not in feats]
+# ──────────────────── helpery ─────────────────────
+def load_schema(schema_path: str) -> list[str]:
+    path = Path(schema_path)
+    if not path.exists():
+        raise FileNotFoundError(f"❌ Brak pliku schematu kolumn: {path}")
+    return json.loads(path.read_text())
+
+
+def build_feature_df(raw_json: str | Path, schema: list[str]) -> pd.DataFrame:
+    """Z surowego JSON-a (inline lub plik) → DataFrame w kolejności schema."""
+    # odczyt
+    feats = (
+        json.loads(raw_json.read_text())
+        if isinstance(raw_json, Path)
+        else json.loads(raw_json)
+    )
+
+    # walidacja ➜ brakujące kolumny
+    missing = [c for c in schema if c not in feats]
     if missing:
-        raise ValueError(f"Missing features: {missing}")
-    return pd.DataFrame([[feats[c] for c in FEATURE_ORDER]], columns=FEATURE_ORDER)
+        raise ValueError(f"Brakuje feature’ów: {missing}")
+
+    return pd.DataFrame([[feats[c] for c in schema]], columns=schema)
 
 
-def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--algo", default="lgb", choices=["rf", "lgb"])
-    ap.add_argument("--model_path", default="models/final_model_lgb.pkl")
+# ────────────────────────── główna funkcja ───────────────────────
+def main() -> None:
+    ap = argparse.ArgumentParser(description="Inferencja – pojedynczy mecz")
+    ap.add_argument("--model", default="output/final_model_lgb.pkl")
+    ap.add_argument("--schema", default="output/feature_schema.json")
+
     g = ap.add_mutually_exclusive_group(required=True)
-    g.add_argument("--features", help="inline JSON string with features")
-    g.add_argument("--features_file", help="path to JSON file with features")
+    g.add_argument("--features", help="inline JSON, np. '{\"xG_home\":1.4, …}'")
+
+    g.add_argument("--features-file", help="plik JSON z feature’ami")
+
     args = ap.parse_args()
 
-    model = joblib.load(args.model_path)
-    X_new = load_features(args)
-    proba = model.predict_proba(X_new)[0]
+    # ① ładujemy artefakty
+    schema = load_schema(args.schema)
+    model = joblib.load(args.model)
+
+    # ② przygotowujemy wektor cech
+    X = (
+        build_feature_df(Path(args.features_file), schema)
+        if args.features_file
+        else build_feature_df(args.features, schema)
+    )
+
+    # ③ predykcja
+    proba = model.predict_proba(X)[0]
     pred = model.classes_[np.argmax(proba)]
 
-    print(f"Prediction: {pred}")
-    print(f"Probabilities (H/D/A): {dict(zip(model.classes_, proba.round(3)))}")
+    # ④ wynik
+    print(f"Prediction  : {pred}")
+    print(f"Probabilities: {dict(zip(model.classes_, proba.round(3)))}")
 
 
-if __name__ == "__main__":
+if __name__ == "__main__":  # pragma: no cover
     main()
 
 
 ===== C:\Users\barte\OneDrive\Pulpit\Studia\ROK III\Semestr 2\football-prediction\scripts\model_train.py =====
-import json, argparse, joblib, os
-import pandas as pd
+import json
+import argparse
+import joblib
+import os
 from src.data_loader import load_data
 from src.features import extract_features
 from src.model import train_model
-
-NUMERIC_FEATURES = [
-    "xG_home",
-    "xG_away",
-    "bookie_prob_home",
-    "bookie_prob_draw",
-    "bookie_prob_away",
-    "home_roll_xg_5",
-    "away_roll_xg_5",
-    "home_roll_gd_5",
-    "away_roll_gd_5",
-    "home_roll_form_5",
-    "away_roll_form_5",
-    "dow",
-    "month",
-    "home_days_since",
-    "away_days_since",
-]
+from src.constants import FEATURE_COLUMNS
 
 
 def main():
@@ -652,8 +502,8 @@ def main():
     )
     args = parser.parse_args()
 
-    df = extract_features(load_data()).dropna(subset=NUMERIC_FEATURES + ["result"])
-    X, y = df[NUMERIC_FEATURES], df["result"]
+    df = extract_features(load_data()).dropna(subset=FEATURE_COLUMNS + ["result"])
+    X, y = df[FEATURE_COLUMNS], df["result"]
 
     params = {}
     if args.params:
@@ -671,36 +521,6 @@ if __name__ == "__main__":
     main()
 
 
-===== C:\Users\barte\OneDrive\Pulpit\Studia\ROK III\Semestr 2\football-prediction\scripts\run_pipeline.py =====
-import argparse
-
-
-def cli():
-    p = argparse.ArgumentParser()
-    p.add_argument("--algo", default="rf", choices=["rf", "lgb"])
-    return p.parse_args()
-
-
-def run_pipeline():
-    args = cli()
-    df = extract_features(load_data())
-    df = df.dropna()
-    X = df.drop(columns=["result"])
-    y = df["result"]
-    X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=0.2, stratify=y, random_state=42
-    )
-    model = train_model(X_train, y_train, algo=algo)
-    y_pred = model.predict(X_test)
-    evaluate_model(y_test, y_pred)
-    print(f"Done (algo = {args.algo})")
-
-
-if __name__ == "__main__":
-    args = cli()
-    run_pipeline(algo=args.algo)
-
-
 ===== C:\Users\barte\OneDrive\Pulpit\Studia\ROK III\Semestr 2\football-prediction\scripts\tune_lgbm.py =====
 import json
 from pathlib import Path
@@ -708,30 +528,13 @@ from pathlib import Path
 from src.data_loader import load_data
 from src.features import extract_features
 from src.model import lgb_grid_search
+from src.constants import FEATURE_COLUMNS
 
 
 if __name__ == "__main__":
 
-    NUMERIC_FEATURES = [
-        "xG_home",
-        "xG_away",
-        "bookie_prob_home",
-        "bookie_prob_draw",
-        "bookie_prob_away",
-        "home_roll_xg_5",
-        "away_roll_xg_5",
-        "home_roll_gd_5",
-        "away_roll_gd_5",
-        "home_roll_form_5",
-        "away_roll_form_5",
-        "dow",
-        "month",
-        "home_days_since",
-        "away_days_since",
-    ]
-
     df = extract_features(load_data()).dropna()
-    X = df[NUMERIC_FEATURES]
+    X = df[FEATURE_COLUMNS]
     y = df["result"]
 
     best_params, best_score = lgb_grid_search(X, y)
@@ -739,6 +542,166 @@ if __name__ == "__main__":
     Path("output").mkdir(exist_ok=True)
     json.dump(best_params, open("output/lgb_best.json", "w"), indent=4)
     print("Saved → output/lgb_best.json")
+
+
+===== C:\Users\barte\OneDrive\Pulpit\Studia\ROK III\Semestr 2\football-prediction\src\constants.py =====
+DIV_MAP = {
+    "E0": "EPL",
+    "SP1": "LALIGA",
+    "D1": "BUNDESLIGA",
+    "I1": "SERIEA",
+    "F1": "LIGUE1",
+}
+
+TEAM_MAP = {
+    # ——— Premier League / Championship
+    "Manchester United": "Man United",
+    "Manchester City": "Man City",
+    "Wolverhampton Wanderers": "Wolves",
+    "Brighton & Hove Albion": "Brighton",
+    "Tottenham Hotspur": "Tottenham",
+    "West Ham United": "West Ham",
+    "Newcastle United": "Newcastle",
+    "Nottingham Forest": "Nott'm Forest",
+    "Sheffield United": "Sheffield United",
+    "Crystal Palace": "Crystal Palace",
+    "Liverpool": "Liverpool",
+    "Chelsea": "Chelsea",
+    "Arsenal": "Arsenal",
+    "Everton": "Everton",
+    "Bournemouth": "Bournemouth",
+    "Burnley": "Burnley",
+    "Southampton": "Southampton",
+    "Leicester": "Leicester",
+    "Leeds": "Leeds",
+    "Aston Villa": "Aston Villa",
+    "Watford": "Watford",
+    "Wolves": "Wolves",
+    "West Bromwich Albion": "West Brom",
+    "Fulham": "Fulham",
+    # ——— La Liga
+    "Athletic Club": "Ath Bilbao",
+    "Atletico Madrid": "Ath Madrid",
+    "Real Madrid": "Real Madrid",
+    "FC Barcelona": "Barcelona",
+    "Real Sociedad": "Sociedad",
+    "Real Betis": "Betis",
+    "Real Valladolid": "Valladolid",
+    "Espanyol": "Espanol",
+    "Granada": "Granada",
+    "Celta Vigo": "Celta",
+    "Sevilla": "Sevilla",
+    "Valencia": "Valencia",
+    "Villarreal": "Villarreal",
+    "Getafe": "Getafe",
+    "Levante": "Levante",
+    "Alaves": "Alaves",
+    "Mallorca": "Mallorca",
+    "Elche": "Elche",
+    "Cadiz": "Cadiz",
+    "Eibar": "Eibar",
+    "Osasuna": "Osasuna",
+    # ——— Ligue 1
+    "Paris Saint Germain": "Paris SG",
+    "Olympique Marseille": "Marseille",
+    "Lyon": "Lyon",
+    "Lille": "Lille",
+    "AS Monaco": "Monaco",
+    "Nice": "Nice",
+    "Stade Rennais": "Rennes",
+    "Nantes": "Nantes",
+    "Strasbourg": "Strasbourg",
+    "Brest": "Brest",
+    "Ajaccio": "Ajaccio",
+    "Nimes": "Nimes",
+    "Montpellier": "Montpellier",
+    "Lorient": "Lorient",
+    "Bordeaux": "Bordeaux",
+    "Reims": "Reims",
+    "Amiens": "Amiens",
+    "Angers": "Angers",
+    "Dijon": "Dijon",
+    "Clermont Foot": "Clermont",
+    "Metz": "Metz",
+    "Lens": "Lens",
+    # ——— Serie A
+    "Inter Milan": "Inter",
+    "AC Milan": "Milan",
+    "Juventus": "Juventus",
+    "Atalanta": "Atalanta",
+    "Napoli": "Napoli",
+    "Roma": "Roma",
+    "SS Lazio": "Lazio",
+    "Fiorentina": "Fiorentina",
+    "Torino": "Torino",
+    "Udinese": "Udinese",
+    "Bologna": "Bologna",
+    "Empoli": "Empoli",
+    "Sassuolo": "Sassuolo",
+    "Cagliari": "Cagliari",
+    "Sampdoria": "Sampdoria",
+    "Verona": "Verona",
+    "Genoa": "Genoa",
+    "Salernitana": "Salernitana",
+    "Brescia": "Brescia",
+    "Lecce": "Lecce",
+    "Monza": "Monza",
+    # ——— Bundesliga
+    "Bayern Munich": "Bayern Munich",
+    "Borussia Dortmund": "Dortmund",
+    "Bayer Leverkusen": "Leverkusen",
+    "RB Leipzig": "RB Leipzig",
+    "Borussia M.Gladbach": "M'gladbach",
+    "VfB Stuttgart": "Stuttgart",
+    "Eintracht Frankfurt": "Ein Frankfurt",
+    "FC Cologne": "FC Koln",
+    "Union Berlin": "Union Berlin",
+    "Freiburg": "Freiburg",
+    "Hertha Berlin": "Hertha",
+    "Hoffenheim": "Hoffenheim",
+    "Wolfsburg": "Wolfsburg",
+    "Mainz 05": "Mainz",
+    "Augsburg": "Augsburg",
+    "Schalke 04": "Schalke 04",
+    "Werder Bremen": "Werder Bremen",
+    "Fortuna Duesseldorf": "Fortuna Dusseldorf",
+    "Greuther Fuerth": "Greuther Furth",
+    "FC Heidenheim": "Heidenheim",
+    "Arminia Bielefeld": "Bielefeld",
+    # ——— Inne
+    "Holstein Kiel": "Holstein Kiel",
+    "Ipswich": "Ipswich",
+    "Como": "Como",
+    "Parma Calcio 1913": "Parma",
+    "RasenBallsport Leipzig": "RB Leipzig",
+    "Rayo Vallecano": "Vallecano",
+    "Saint-Etienne": "St Etienne",
+    "St. Pauli": "St. Pauli",
+}
+
+FEATURE_COLUMNS: list[str] = [
+    "xG_home",
+    "xG_away",
+    "bookie_prob_home",
+    "bookie_prob_draw",
+    "bookie_prob_away",
+    "home_roll_xg_5",
+    "away_roll_xg_5",
+    "home_roll_gd_5",
+    "away_roll_gd_5",
+    "home_roll_form_5",
+    "away_roll_form_5",
+    "dow",
+    "month",
+    "home_days_since",
+    "away_days_since",
+    "elo_home",
+    "elo_away",
+    "lambda_home_for",
+    "lambda_home_against",
+    "lambda_away_for",
+    "lambda_away_against",
+]
 
 
 ===== C:\Users\barte\OneDrive\Pulpit\Studia\ROK III\Semestr 2\football-prediction\src\data_loader.py =====
@@ -754,58 +717,89 @@ def load_data(path: str = "data/processed/model_input.parquet") -> pd.DataFrame:
 
 ===== C:\Users\barte\OneDrive\Pulpit\Studia\ROK III\Semestr 2\football-prediction\src\features.py =====
 import pandas as pd
+import numpy as np
+
+K_ELO = 20  # szybkość uczenia rankingów Elo
+WINDOW = 5  # rozmiar bufora rolling
 
 
 def extract_features(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Given the raw model_input DataFrame, compute:
-      - xg_diff, goal_diff
-      - rolling averages (last 5 matches) of xg_diff, goal_diff
-      - form (sum of points last 5 matches)
-      - temporal features: day of week, month, days since last match
-    """
+    """Wylicza wszystkie cechy potrzebne modelowi v2."""
+
     df = df.sort_values("date").copy()
 
-    # 1) basic diffs & points
+    # 1️⃣  Podstawowe różnice & punkty
     df["xg_diff"] = df["xG_home"] - df["xG_away"]
     df["goal_diff"] = df["home_goals"] - df["away_goals"]
     df["home_pts"] = df["result"].map({"H": 3, "D": 1, "A": 0})
     df["away_pts"] = df["result"].map({"H": 0, "D": 1, "A": 3})
 
-    window = 5
-
-    # 2) rolling features (last 5 matches per team) — use transform to keep index alignment
+    # 2️⃣  Rolling — ostatnie 5 meczów
     df["home_roll_xg_5"] = df.groupby("home_team")["xg_diff"].transform(
-        lambda x: x.shift().rolling(window).mean()
+        lambda s: s.shift().rolling(WINDOW).mean()
     )
     df["away_roll_xg_5"] = df.groupby("away_team")["xg_diff"].transform(
-        lambda x: x.shift().rolling(window).mean()
+        lambda s: s.shift().rolling(WINDOW).mean()
     )
     df["home_roll_gd_5"] = df.groupby("home_team")["goal_diff"].transform(
-        lambda x: x.shift().rolling(window).mean()
+        lambda s: s.shift().rolling(WINDOW).mean()
     )
     df["away_roll_gd_5"] = df.groupby("away_team")["goal_diff"].transform(
-        lambda x: x.shift().rolling(window).mean()
+        lambda s: s.shift().rolling(WINDOW).mean()
     )
     df["home_roll_form_5"] = df.groupby("home_team")["home_pts"].transform(
-        lambda x: x.shift().rolling(window).sum()
+        lambda s: s.shift().rolling(WINDOW).sum()
     )
     df["away_roll_form_5"] = df.groupby("away_team")["away_pts"].transform(
-        lambda x: x.shift().rolling(window).sum()
+        lambda s: s.shift().rolling(WINDOW).sum()
     )
 
-    # 3) temporal features
-    df["dow"] = df["date"].dt.weekday  # 0=Monday…6=Sunday
+    # 3️⃣  Temporal
+    df["dow"] = df["date"].dt.weekday
     df["month"] = df["date"].dt.month
 
-    # 4) days since last match
+    # 4️⃣  Days‑since‑last
     df["home_prev_date"] = df.groupby("home_team")["date"].shift(1)
     df["away_prev_date"] = df.groupby("away_team")["date"].shift(1)
     df["home_days_since"] = (df["date"] - df["home_prev_date"]).dt.days
     df["away_days_since"] = (df["date"] - df["away_prev_date"]).dt.days
 
-    # 5) drop intermediate helper cols
-    df = df.drop(columns=["home_prev_date", "away_prev_date"])
+    # 5️⃣  Elo rating (online update)
+    elo_dict: dict[str, float] = {}
+    elo_home, elo_away = [], []
+    for _, row in df.iterrows():
+        h, a = row["home_team"], row["away_team"]
+        elo_dict.setdefault(h, 1500.0)
+        elo_dict.setdefault(a, 1500.0)
+        elo_home.append(elo_dict[h])
+        elo_away.append(elo_dict[a])
+        score_home = (
+            1.0 if row["result"] == "H" else 0.5 if row["result"] == "D" else 0.0
+        )
+        exp_home = 1 / (1 + 10 ** ((elo_dict[a] - elo_dict[h]) / 400))
+        elo_dict[h] += K_ELO * (score_home - exp_home)
+        elo_dict[a] += K_ELO * ((1 - score_home) - (1 - exp_home))
+    df["elo_home"], df["elo_away"] = elo_home, elo_away
+
+    # 6️⃣  Poisson‑lambda (średnia goli do momentu meczu)
+    grp_home = df.groupby("home_team")
+    df["lambda_home_for"] = grp_home["home_goals"].transform(
+        lambda s: s.shift().expanding().mean()
+    )
+    df["lambda_home_against"] = grp_home["away_goals"].transform(
+        lambda s: s.shift().expanding().mean()
+    )
+
+    grp_away = df.groupby("away_team")
+    df["lambda_away_for"] = grp_away["away_goals"].transform(
+        lambda s: s.shift().expanding().mean()
+    )
+    df["lambda_away_against"] = grp_away["home_goals"].transform(
+        lambda s: s.shift().expanding().mean()
+    )
+
+    # 7️⃣  Posprzątaj techniczne kolumny
+    df.drop(columns=["home_prev_date", "away_prev_date"], inplace=True)
 
     return df
 
@@ -847,47 +841,62 @@ def save_confusion_matrix_plot(y_true, y_pred, path="output/confusion_matrix.png
 
 
 ===== C:\Users\barte\OneDrive\Pulpit\Studia\ROK III\Semestr 2\football-prediction\src\model.py =====
-# src/model.py
-from typing import Literal, Tuple, Dict, Any
+from typing import Literal, Any, Dict, Tuple
 
 import lightgbm as lgb
+from catboost import CatBoostClassifier
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import classification_report, f1_score
 from sklearn.model_selection import GridSearchCV
 
-
-Algo = Literal["rf", "lgb"]
+Algo = Literal["rf", "lgb", "cat"]
 
 
 def _build_rf(params: Dict[str, Any] | None = None) -> RandomForestClassifier:
-    default = dict(
+    cfg = dict(
         n_estimators=300,
-        max_depth=8,
+        max_depth=10,
         min_samples_leaf=3,
         class_weight="balanced",
         random_state=42,
         n_jobs=-1,
     )
     if params:
-        default.update(params)
-    return RandomForestClassifier(**default)
+        cfg.update(params)
+    return RandomForestClassifier(**cfg)
 
 
 def _build_lgb(params: Dict[str, Any] | None = None) -> lgb.LGBMClassifier:
-    default = dict(
+    cfg = dict(
         objective="multiclass",
         num_class=3,
-        n_estimators=400,
-        learning_rate=0.05,
+        n_estimators=600,
+        learning_rate=0.03,
         max_depth=-1,
         subsample=0.8,
         colsample_bytree=0.8,
+        class_weight="balanced",
         random_state=42,
         n_jobs=-1,
     )
     if params:
-        default.update(params)
-    return lgb.LGBMClassifier(**default)
+        cfg.update(params)
+    return lgb.LGBMClassifier(**cfg)
+
+
+def _build_cat(params: Dict[str, Any] | None = None) -> CatBoostClassifier:
+    cfg = dict(
+        loss_function="MultiClass",
+        iterations=800,
+        learning_rate=0.03,
+        depth=8,
+        auto_class_weights="Balanced",
+        random_seed=42,
+        verbose=False,
+    )
+    if params:
+        cfg.update(params)
+    return CatBoostClassifier(**cfg)
 
 
 def get_model(algo: Algo = "rf", params: Dict[str, Any] | None = None):
@@ -895,10 +904,12 @@ def get_model(algo: Algo = "rf", params: Dict[str, Any] | None = None):
         return _build_rf(params)
     if algo == "lgb":
         return _build_lgb(params)
+    if algo == "cat":
+        return _build_cat(params)
     raise ValueError(f"Unknown algo: {algo}")
 
 
-def train_model(X, y, algo: Algo = "rf", params=None):
+def train_model(X, y, *, algo: Algo = "rf", params=None):
     model = get_model(algo, params)
     model.fit(X, y)
     return model
@@ -916,112 +927,102 @@ def evaluate_model(y_true, y_pred, verbose: bool = True) -> Dict[str, float]:
 lgb_param_grid = {
     "num_leaves": [31, 63],
     "max_depth": [-1, 8],
-    "learning_rate": [0.05, 0.1],
-    "n_estimators": [300, 600],
+    "learning_rate": [0.03, 0.05],
+    "n_estimators": [500, 800],
     "subsample": [0.8, 1.0],
     "colsample_bytree": [0.8, 1.0],
 }
 
 
 def lgb_grid_search(X, y, cv=3, scoring="f1_macro") -> Tuple[Dict[str, Any], float]:
-    clf = _build_lgb()
     gs = GridSearchCV(
-        clf,
-        lgb_param_grid,
-        cv=cv,
-        scoring=scoring,
-        n_jobs=-1,
-        verbose=1,
+        _build_lgb(), lgb_param_grid, cv=cv, scoring=scoring, n_jobs=-1, verbose=1
     )
     gs.fit(X, y)
     return gs.best_params_, gs.best_score_
 
 
 ===== C:\Users\barte\OneDrive\Pulpit\Studia\ROK III\Semestr 2\football-prediction\src\pipeline.py =====
+import argparse
+import json
+import logging
+from pathlib import Path
+
+import joblib
+import pandas as pd
+from sklearn.ensemble import StackingClassifier
+from sklearn.model_selection import TimeSeriesSplit
+
+from src.constants import FEATURE_COLUMNS
 from src.data_loader import load_data
 from src.features import extract_features
-from src.model import train_model, evaluate_model
+from src.model import train_model, evaluate_model, get_model
 from src.metrics import (
     save_classification_report_txt,
     save_classification_report_json,
     save_confusion_matrix_plot,
 )
-from sklearn.model_selection import train_test_split
+
+logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
+logger = logging.getLogger("footpred")
 
 
-def run_pipeline():
-    # 1) load the model_input.parquet (already filtered for xG + odds)
-    df = load_data("data/processed/model_input.parquet")
+def run_pipeline(
+    *,
+    algo: str = "lgb",  # "rf", "cat" albo specjalne "stack"
+    input_path: str = "data/processed/model_input.parquet",
+    output_dir: str = "output",
+) -> None:
+    logger.info("Ładowanie danych → %s", input_path)
+    df = extract_features(load_data(input_path)).dropna(subset=FEATURE_COLUMNS)
+    X, y = df[FEATURE_COLUMNS], df["result"]
 
-    # 2) compute all features (incl. rolling, temporal, form…)
-    df = extract_features(df)
-
-    # 3) drop any rows still with NA (e.g. first few matches per team)
-    df = df.dropna(
-        subset=[
-            "xG_home",
-            "xG_away",
-            "bookie_prob_home",
-            "bookie_prob_draw",
-            "bookie_prob_away",
-            # new rolled ones:
-            "home_roll_xg_5",
-            "away_roll_xg_5",
-            "home_roll_gd_5",
-            "away_roll_gd_5",
-            "home_roll_form_5",
-            "away_roll_form_5",
-            "home_days_since",
-            "away_days_since",
-        ]
+    # TimeSeriesSplit — ostatni fold traktujemy jako test
+    cv = TimeSeriesSplit(n_splits=5)
+    train_idx, test_idx = list(cv.split(X))[-1]
+    X_tr, X_te, y_tr, y_te = (
+        X.iloc[train_idx],
+        X.iloc[test_idx],
+        y.iloc[train_idx],
+        y.iloc[test_idx],
     )
 
-    # 4) select your model inputs & target
-    X = df[
-        [
-            # original
-            "xG_home",
-            "xG_away",
-            "bookie_prob_home",
-            "bookie_prob_draw",
-            "bookie_prob_away",
-            # new rolling
-            "home_roll_xg_5",
-            "away_roll_xg_5",
-            "home_roll_gd_5",
-            "away_roll_gd_5",
-            "home_roll_form_5",
-            "away_roll_form_5",
-            # temporal
-            "dow",
-            "month",
-            "home_days_since",
-            "away_days_since",
+    # wybór modelu
+    if algo == "stack":
+        base = [
+            ("lgb", get_model("lgb")),
+            ("cat", get_model("cat")),
+            ("rf", get_model("rf")),
         ]
-    ]
-    y = df["result"]
+        model = StackingClassifier(
+            estimators=base,
+            final_estimator=get_model("lgb"),
+            passthrough=True,
+            n_jobs=-1,
+        ).fit(X_tr, y_tr)
+    else:
+        model = train_model(X_tr, y_tr, algo=algo)
 
-    # 5) stratified train‐test split (keep H/D/A proportions)
-    X_train, X_test, y_train, y_test = train_test_split(
-        X,
-        y,
-        test_size=0.2,
-        stratify=y,
-        random_state=42,
-    )
+    # ewaluacja
+    y_pred = model.predict(X_te)
+    metrics = evaluate_model(y_te, y_pred, verbose=False)
+    logger.info("Acc %.3f | macro‑F1 %.3f", metrics["accuracy"], metrics["macro_f1"])
 
-    # 6) train & predict
-    model = train_model(X_train, y_train)
-    y_pred = model.predict(X_test)
-
-    # 7) evaluate & save outputs
-    evaluate_model(y_test, y_pred)
-    save_classification_report_txt(y_test, y_pred)
-    save_classification_report_json(y_test, y_pred)
-    save_confusion_matrix_plot(y_test, y_pred)
-
-    print("🚀 Pipeline finished successfully.")
+    # zapisz artefakty
+    out = Path(output_dir)
+    out.mkdir(exist_ok=True, parents=True)
+    joblib.dump(model, out / f"final_model_{algo}.pkl")
+    (out / "feature_schema.json").write_text(json.dumps(FEATURE_COLUMNS, indent=2))
+    save_confusion_matrix_plot(y_te, y_pred, out / "confusion_matrix.png")
+    save_classification_report_txt(y_te, y_pred, out / "report.txt")
+    save_classification_report_json(y_te, y_pred, out / "metrics.json")
+    logger.info("Artefakty zapisane w %s", out.resolve())
 
 
 if __name__ == "__main__":
-    run_pipeline()
+    p = argparse.ArgumentParser()
+    p.add_argument("--algo", choices=["rf", "lgb", "cat", "stack"], default="stack")
+    p.add_argument("--input", default="data/processed/model_input.parquet")
+    p.add_argument("--output", default="output")
+    args = p.parse_args()
+    run_pipeline(algo=args.algo, input_path=args.input, output_dir=args.output)
