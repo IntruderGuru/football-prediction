@@ -7,6 +7,7 @@ import joblib
 from sklearn.ensemble import StackingClassifier
 from sklearn.model_selection import TimeSeriesSplit
 from imblearn.over_sampling import SMOTE
+from sklearn.preprocessing import LabelEncoder
 
 from src.constants import FEATURE_COLUMNS
 from src.data_loader import load_data
@@ -35,15 +36,14 @@ def run_pipeline(
     print("Different y classes counts:")
     print(y.value_counts())
 
+    le = LabelEncoder()
+    y_encoded = le.fit_transform(y)
+
     # TimeSeriesSplit — ostatni fold traktujemy jako test
     cv = TimeSeriesSplit(n_splits=5)
     train_idx, test_idx = list(cv.split(X))[-1]
-    X_tr, X_te, y_tr, y_te = (
-        X.iloc[train_idx],
-        X.iloc[test_idx],
-        y.iloc[train_idx],
-        y.iloc[test_idx],
-    )
+    X_tr, X_te = X.iloc[train_idx], X.iloc[test_idx]
+    y_tr, y_te = y_encoded[train_idx], y_encoded[test_idx]
 
     sm = SMOTE(random_state=42)
     X_resampled, y_resampled = sm.fit_resample(X_tr, y_tr)
@@ -66,23 +66,32 @@ def run_pipeline(
 
     # ewaluacja
     y_pred = model.predict(X_te)
-    metrics = evaluate_model(y_te, y_pred, verbose=False)
+
+    y_te_decoded = le.inverse_transform(y_te)
+    y_pred_decoded = le.inverse_transform(y_pred)
+
+    metrics = evaluate_model(y_te_decoded, y_pred_decoded, verbose=False)
     logger.info("Acc %.3f | macro‑F1 %.3f", metrics["accuracy"], metrics["macro_f1"])
 
     # zapisz artefakty
     out = Path(output_dir)
     out.mkdir(exist_ok=True, parents=True)
     joblib.dump(model, out / f"final_model_{algo}.pkl")
+    joblib.dump(le, out / "label_encoder.pkl")
     (out / "feature_schema.json").write_text(json.dumps(FEATURE_COLUMNS, indent=2))
-    save_confusion_matrix_plot(y_te, y_pred, out / "confusion_matrix.png")
-    save_classification_report_txt(y_te, y_pred, out / "report.txt")
-    save_classification_report_json(y_te, y_pred, out / "metrics.json")
+    save_confusion_matrix_plot(
+        y_te_decoded, y_pred_decoded, out / "confusion_matrix.png"
+    )
+    save_classification_report_txt(y_te_decoded, y_pred_decoded, out / "report.txt")
+    save_classification_report_json(y_te_decoded, y_pred_decoded, out / "metrics.json")
     logger.info("Artefakty zapisane w %s", out.resolve())
 
 
 if __name__ == "__main__":
     p = argparse.ArgumentParser()
-    p.add_argument("--algo", choices=["rf", "lgb", "cat", "stack"], default="stack")
+    p.add_argument(
+        "--algo", choices=["rf", "lgb", "cat", "stack", "xgb"], default="stack"
+    )
     p.add_argument("--input", default="data/processed/model_input.parquet")
     p.add_argument("--output", default="output")
     args = p.parse_args()

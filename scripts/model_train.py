@@ -10,7 +10,7 @@ from src.constants import FEATURE_COLUMNS
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--algo", default="rf", choices=["rf", "lgb"])
+    parser.add_argument("--algo", default="rf", choices=["rf", "lgb", "cat", "xgb"])
     parser.add_argument(
         "--params", default=None, help="path to JSON with tuned hyper-params"
     )

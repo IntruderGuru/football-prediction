@@ -17,3 +17,4 @@ fastparquet
 joblib
 catboost
 imbalanced-learn
+xgboost

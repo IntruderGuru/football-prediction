@@ -6,8 +6,29 @@ from catboost import CatBoostClassifier
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import classification_report, f1_score
 from sklearn.model_selection import GridSearchCV
+from xgboost import XGBClassifier
 
-Algo = Literal["rf", "lgb", "cat"]
+Algo = Literal["rf", "lgb", "cat", "xgb"]
+
+
+def _build_xgb(params: Dict[str, Any] | None = None) -> XGBClassifier:
+    cfg = dict(
+        objective="multi:softprob",
+        num_class=3,
+        n_estimators=500,
+        learning_rate=0.03,
+        max_depth=6,
+        subsample=0.8,
+        colsample_bytree=0.8,
+        scale_pos_weight=1,
+        random_state=42,
+        n_jobs=-1,
+        verbosity=0,
+        use_label_encoder=False,
+    )
+    if params:
+        cfg.update(params)
+    return XGBClassifier(**cfg)
 
 
 def _build_rf(params: Dict[str, Any] | None = None) -> RandomForestClassifier:
@@ -64,6 +85,8 @@ def get_model(algo: Algo = "rf", params: Dict[str, Any] | None = None):
         return _build_lgb(params)
     if algo == "cat":
         return _build_cat(params)
+    if algo == "xgb":
+        return _build_xgb(params)
     raise ValueError(f"Unknown algo: {algo}")
 
 
