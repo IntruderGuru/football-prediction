@@ -158,3 +158,6 @@ FEATURE_COLUMNS: list[str] = [
     "lambda_away_for",
     "lambda_away_against",
 ]
+
+WEIGHTS_RF = {"H": 1, "A": 1, "D": 1.1}
+WEIGHTS_LGB = {"H": 1, "A": 1, "D": 1.2}

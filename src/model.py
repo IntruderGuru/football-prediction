@@ -1,5 +1,6 @@
 from typing import Literal, Any, Dict, Tuple
 
+from src.constants import WEIGHTS_LGB, WEIGHTS_RF
 import lightgbm as lgb
 from catboost import CatBoostClassifier
 from sklearn.ensemble import RandomForestClassifier
@@ -14,7 +15,7 @@ def _build_rf(params: Dict[str, Any] | None = None) -> RandomForestClassifier:
         n_estimators=300,
         max_depth=10,
         min_samples_leaf=3,
-        class_weight="balanced",
+        class_weight=WEIGHTS_RF,
         random_state=42,
         n_jobs=-1,
     )
@@ -32,7 +33,7 @@ def _build_lgb(params: Dict[str, Any] | None = None) -> lgb.LGBMClassifier:
         max_depth=-1,
         subsample=0.8,
         colsample_bytree=0.8,
-        class_weight="balanced",
+        class_weight=WEIGHTS_LGB,
         random_state=42,
         n_jobs=-1,
     )

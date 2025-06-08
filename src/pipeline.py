@@ -6,6 +6,7 @@ from pathlib import Path
 import joblib
 from sklearn.ensemble import StackingClassifier
 from sklearn.model_selection import TimeSeriesSplit
+from imblearn.over_sampling import SMOTE
 
 from src.constants import FEATURE_COLUMNS
 from src.data_loader import load_data
@@ -31,6 +32,9 @@ def run_pipeline(
     df = extract_features(load_data(input_path)).dropna(subset=FEATURE_COLUMNS)
     X, y = df[FEATURE_COLUMNS], df["result"]
 
+    print("Different y classes counts:")
+    print(y.value_counts())
+
     # TimeSeriesSplit — ostatni fold traktujemy jako test
     cv = TimeSeriesSplit(n_splits=5)
     train_idx, test_idx = list(cv.split(X))[-1]
@@ -40,6 +44,9 @@ def run_pipeline(
         y.iloc[train_idx],
         y.iloc[test_idx],
     )
+
+    sm = SMOTE(random_state=42)
+    X_resampled, y_resampled = sm.fit_resample(X_tr, y_tr)
 
     # wybór modelu
     if algo == "stack":
@@ -53,9 +60,9 @@ def run_pipeline(
             final_estimator=get_model("lgb"),
             passthrough=True,
             n_jobs=-1,
-        ).fit(X_tr, y_tr)
+        ).fit(X_resampled, y_resampled)
     else:
-        model = train_model(X_tr, y_tr, algo=algo)
+        model = train_model(X_resampled, y_resampled, algo=algo)
 
     # ewaluacja
     y_pred = model.predict(X_te)
