@@ -10,4 +10,10 @@ jupyter
 pyyaml
 tqdm
 pyarrow
+aiohttp
+bs4
+understat
 fastparquet
+joblib
+catboost
+imbalanced-learn
