@@ -36,6 +36,7 @@ def _warn_cold_start(team: str, n_matches: int):
     )
 
 
+# scripts/infer_match.py (fragment)
 def build_feature_vector(
     home_team: str,
     away_team: str,
@@ -43,8 +44,12 @@ def build_feature_vector(
     bookie_home: float | None = None,
     bookie_draw: float | None = None,
     bookie_away: float | None = None,
+    update_history: bool = True,  # NEW
 ) -> pd.DataFrame:
-    """Zwraca pojedynczy wiersz z cechami w kolejności FEATURE_COLUMNS."""
+    """Zwraca pojedynczy wiersz cech.
+    • update_history=True  – jak dotychczas (używane przy predict-match)
+    • update_history=False – NIE dopisuje fikcyjnego meczu (symulacja sezonu)
+    """
 
     match_dt = pd.to_datetime(match_date)
 
@@ -53,8 +58,21 @@ def build_feature_vector(
     hist_df["date"] = pd.to_datetime(hist_df["date"])
     hist_df = hist_df[hist_df["date"] < match_dt].copy()
 
-    # 2. Ekstrakcja cech na historii
+    # -------------- DOPISYWANIE PUSTEGO MECZU? -----------------
+    if update_history:
+        empty_row = {
+            "date": match_dt,
+            "home_team": home_team,
+            "away_team": away_team,
+            # reszta kolumn na None/NaN
+        }
+        for c in hist_df.columns:
+            empty_row.setdefault(c, None)
+        hist_df = pd.concat([hist_df, pd.DataFrame([empty_row])], ignore_index=True)
+    # -----------------------------------------------------------
+
     fe_hist = extract_features(hist_df)
+    ...
 
     # 3. Pobierz “aktualny stan” obu zespołów
     row_home = _latest_team_row(fe_hist, home_team, "home")
