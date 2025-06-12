@@ -1,0 +1,101 @@
+import pandas as pd
+import numpy as np
+
+K_ELO = 20
+WINDOW = 5
+
+
+def extract_features(df: pd.DataFrame) -> pd.DataFrame:
+    df = df.sort_values("date").copy()
+
+    df["xG_home_shift"] = df.groupby("home_team")["xG_home"].shift(1)
+    df["xG_away_shift"] = df.groupby("away_team")["xG_away"].shift(1)
+
+    for col in ["xG_home_shift", "xG_away_shift"]:
+        league_mean = df.groupby("league")[col].transform("mean")
+        df[col] = df[col].fillna(league_mean)
+
+    # Wypełnij tylko kolumny liczbowe
+    num_cols = df.select_dtypes(include="number").columns
+    df[num_cols] = df[num_cols].fillna(df[num_cols].mean())
+
+    # Po ewentualnych zmianach typów, przywróć je jawnie
+    df = df.infer_objects(copy=False)
+
+    df["xg_diff"] = df["xG_home_shift"] - df["xG_away_shift"]
+
+    df["goal_diff"] = df["home_goals"] - df["away_goals"]
+    df["home_pts"] = df["result"].map({"H": 3, "D": 1, "A": 0})
+    df["away_pts"] = df["result"].map({"H": 0, "D": 1, "A": 3})
+
+    df["home_roll_xg_5"] = df.groupby("home_team")["xg_diff"].transform(
+        lambda s: s.shift().rolling(WINDOW).mean()
+    )
+    df["away_roll_xg_5"] = df.groupby("away_team")["xg_diff"].transform(
+        lambda s: s.shift().rolling(WINDOW).mean()
+    )
+    df["home_roll_gd_5"] = df.groupby("home_team")["goal_diff"].transform(
+        lambda s: s.shift().rolling(WINDOW).mean()
+    )
+    df["away_roll_gd_5"] = df.groupby("away_team")["goal_diff"].transform(
+        lambda s: s.shift().rolling(WINDOW).mean()
+    )
+    df["home_roll_form_5"] = df.groupby("home_team")["home_pts"].transform(
+        lambda s: s.shift().rolling(WINDOW).sum()
+    )
+    df["away_roll_form_5"] = df.groupby("away_team")["away_pts"].transform(
+        lambda s: s.shift().rolling(WINDOW).sum()
+    )
+
+    df["dow"] = df["date"].dt.weekday
+    df["month"] = df["date"].dt.month
+
+    df["home_prev_date"] = df.groupby("home_team")["date"].shift(1)
+    df["away_prev_date"] = df.groupby("away_team")["date"].shift(1)
+    df["home_days_since"] = (df["date"] - df["home_prev_date"]).dt.days
+    df["away_days_since"] = (df["date"] - df["away_prev_date"]).dt.days
+
+    elo_dict = {}
+    elo_home, elo_away = [], []
+    for _, row in df.iterrows():
+        h, a = row["home_team"], row["away_team"]
+        elo_dict.setdefault(h, 1500.0)
+        elo_dict.setdefault(a, 1500.0)
+        elo_home.append(elo_dict[h])
+        elo_away.append(elo_dict[a])
+        score_home = (
+            1.0 if row["result"] == "H" else 0.5 if row["result"] == "D" else 0.0
+        )
+        exp_home = 1 / (1 + 10 ** ((elo_dict[a] - elo_dict[h]) / 400))
+        elo_dict[h] += K_ELO * (score_home - exp_home)
+        elo_dict[a] += K_ELO * ((1 - score_home) - (1 - exp_home))
+    df["elo_home"], df["elo_away"] = elo_home, elo_away
+    df["elo_diff"] = df["elo_home"] - df["elo_away"]
+
+    grp_home = df.groupby("home_team")
+    df["lambda_home_for"] = grp_home["home_goals"].transform(
+        lambda s: s.shift().expanding().mean()
+    )
+    df["lambda_home_against"] = grp_home["away_goals"].transform(
+        lambda s: s.shift().expanding().mean()
+    )
+
+    grp_away = df.groupby("away_team")
+    df["lambda_away_for"] = grp_away["away_goals"].transform(
+        lambda s: s.shift().expanding().mean()
+    )
+    df["lambda_away_against"] = grp_away["home_goals"].transform(
+        lambda s: s.shift().expanding().mean()
+    )
+
+    df.drop(
+        columns=[
+            "home_prev_date",
+            "away_prev_date",
+            "xG_home",
+            "xG_away",
+        ],
+        inplace=True,
+    )
+
+    return df

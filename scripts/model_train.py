@@ -2,9 +2,9 @@ import json
 import argparse
 import joblib
 import os
-from src.data_loader import load_data
-from src.features import extract_features
-from src.model import train_model
+from src.data.loader import FootDataLoader
+from src.features.build import extract_features
+from src.models.model import train_model
 from src.constants import FEATURE_COLUMNS
 
 
@@ -16,7 +16,7 @@ def main():
     )
     args = parser.parse_args()
 
-    df = extract_features(load_data()).dropna(subset=FEATURE_COLUMNS + ["result"])
+    df = extract_features(FootDataLoader().get_training_data()).dropna()
     X, y = df[FEATURE_COLUMNS], df["result"]
 
     params = {}

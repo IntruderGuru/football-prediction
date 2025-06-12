@@ -6,82 +6,191 @@ pandas
 numpy
 scikit-learn
 lightgbm
+catboost
 requests
+aiohttp
+understat
+pyyaml
+rapidfuzz
+tqdm
+pyarrow
+joblib
+typer
+black
+ruff
+optuna
+mergedeep
+python-dotenv
+
 matplotlib
 seaborn
 plotly
 jupyter
-pyyaml
-tqdm
-pyarrow
-aiohttp
 bs4
-understat
 fastparquet
-joblib
-catboost
-
+imbalanced-learn
 
 ===== C:\Users\barte\OneDrive\Pulpit\Studia\ROK III\Semestr 2\football-prediction\setup_guide.txt =====
+# Tworzenie środowiska (z conda)
 conda create -n footpred python=3.11 -y
 conda activate footpred
 
-
+# Instalacja zależności
 pip install -r requirements.txt
 
+# (Opcjonalnie) zablokowanie wersji
+# pip freeze > requirements.lock.txt
 
+# Formatowanie i lintowanie
 pip install pre-commit ruff black
 pre-commit install
 
+# (Dla PowerShella)
 $env:PYTHONPATH="."
 
-// to opcjonalnie narazie nie używamy
-pip install notebook
-jupyter notebook
+# (Dla Linux/macOS)
+# export PYTHONPATH=.
+
+# Przetwarzanie danych
+python scripts/fetch_football_data_uk.py
+python scripts/merge_football_data.py
+python scripts/fetch_understat.py
+python scripts/merge_sources.py
+
+# Trenowanie i ewaluacja modelu
+scripts/run_pipeline.py train // --params lgb_best
+
+# Predykcja pojedynczego meczu
+python scripts/model_predict.py --features "{\"xG_home\":1.4, ...}" --model output/final_model_lgb.pkl
+
+
+===== C:\Users\barte\OneDrive\Pulpit\Studia\ROK III\Semestr 2\football-prediction\notebooks\output\report.txt =====
+              precision    recall  f1-score   support
+
+           A       0.63      0.61      0.62       543
+           D       0.36      0.44      0.39       402
+           H       0.73      0.64      0.68       691
+
+    accuracy                           0.58      1636
+   macro avg       0.57      0.56      0.56      1636
+weighted avg       0.60      0.58      0.59      1636
 
 
 ===== C:\Users\barte\OneDrive\Pulpit\Studia\ROK III\Semestr 2\football-prediction\output\report.txt =====
               precision    recall  f1-score   support
 
-           A       0.58      0.65      0.61       411
-           D       0.35      0.22      0.27       356
-           H       0.63      0.72      0.67       584
+           A       0.63      0.61      0.62       543
+           D       0.36      0.44      0.39       402
+           H       0.73      0.64      0.68       691
 
-    accuracy                           0.57      1351
-   macro avg       0.52      0.53      0.52      1351
-weighted avg       0.54      0.57      0.55      1351
+    accuracy                           0.58      1636
+   macro avg       0.57      0.56      0.56      1636
+weighted avg       0.60      0.58      0.59      1636
 
 
 ===== C:\Users\barte\OneDrive\Pulpit\Studia\ROK III\Semestr 2\football-prediction\scripts\fetch_football_data_uk.py =====
-import requests, itertools
+import requests
+import pandas as pd
+import re
+import logging
+import itertools
 from pathlib import Path
+from typing import List, Optional
+from src.constants import SEASONS, DIV_MAP, LEAGUES
 
-SEASONS = ["2324", "2223", "2122", "2021", "1920"]
-LEAGUES = {
-    "E0": "EPL",
-    "SP1": "LALIGA",
-    "D1": "BUNDESLIGA",
-    "I1": "SERIEA",
-    "F1": "LIGUE1",
-}
-BASE = "https://www.football-data.co.uk/mmz4281/{season}/{code}.csv"
-OUT_DIR = Path("data/raw")
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+BASE_URL = "https://www.football-data.co.uk/mmz4281/{season}/{code}.csv"
+RAW_DIR = Path("data/raw/football_data_uk")
+MERGED_OUT = Path("data/raw/football_data_merged.csv")
 
 
-def fetch_file(season: str, code: str) -> None:
-    url = BASE.format(season=season, code=code)
-    resp = requests.get(url, timeout=20)
-    resp.raise_for_status()
-    OUT_DIR.mkdir(parents=True, exist_ok=True)
-    (OUT_DIR / f"fd_{code}_{season}.csv").write_bytes(resp.content)
+def fetch_file(season: str, code: str) -> Optional[Path]:
+    url = BASE_URL.format(season=season, code=code)
+    try:
+        response = requests.get(url, timeout=20)
+        response.raise_for_status()
+        RAW_DIR.mkdir(parents=True, exist_ok=True)
+        out_path = RAW_DIR / f"fd_{code}_{season}.csv"
+        out_path.write_bytes(response.content)
+        logger.info(f"Saved {out_path.name}")
+        return out_path
+    except Exception as e:
+        logger.warning(f"Failed to fetch {url}: {e}")
+        return None
+
+
+def fetch_all() -> List[Path]:
+    results = []
+    for season, code in itertools.product(SEASONS, LEAGUES):
+        path = fetch_file(season, code)
+        if path:
+            results.append(path)
+    return results
+
+
+def parse_filename(fp: Path) -> Optional[str]:
+    m = re.match(r"fd_(?P<div>[A-Z0-9]+)_(?P<season>\d{4}).csv", fp.name)
+    if not m:
+        logger.warning(f"Regex failed on filename: {fp.name}")
+        return None
+    div = m["div"].upper()
+    if div not in DIV_MAP:
+        logger.warning(f"Unknown league code in DIV_MAP: {div} from {fp.name}")
+        return None
+    return DIV_MAP[div]
+
+
+def merge_fetched(files: List[Path]) -> pd.DataFrame:
+    rows = []
+    for fp in files:
+        league = parse_filename(fp)
+        if league is None:
+            continue
+        try:
+            df = pd.read_csv(
+                fp,
+                usecols=[
+                    "Date",
+                    "HomeTeam",
+                    "AwayTeam",
+                    "FTHG",
+                    "FTAG",
+                    "B365H",
+                    "B365D",
+                    "B365A",
+                ],
+            )
+            df = df.rename(
+                columns={
+                    "Date": "date",
+                    "HomeTeam": "home_team",
+                    "AwayTeam": "away_team",
+                    "FTHG": "home_goals",
+                    "FTAG": "away_goals",
+                    "B365H": "bookie_home",
+                    "B365D": "bookie_draw",
+                    "B365A": "bookie_away",
+                }
+            )
+            df["league"] = league
+            df["date"] = pd.to_datetime(df["date"], dayfirst=True).dt.date
+            rows.append(df)
+            logger.info(f"Parsed: {fp.name}")
+        except Exception as e:
+            logger.warning(f"Error reading {fp.name}: {e}")
+    if not rows:
+        raise ValueError("No valid CSVs could be parsed.")
+    return pd.concat(rows, ignore_index=True)
 
 
 def main() -> None:
-    for season, code in itertools.product(SEASONS, LEAGUES):
-        try:
-            fetch_file(season, code)
-        except Exception:
-            pass
+    fetched_files = fetch_all()
+    merged_df = merge_fetched(fetched_files)
+    MERGED_OUT.parent.mkdir(parents=True, exist_ok=True)
+    merged_df.to_csv(MERGED_OUT, index=False)
+    logger.info(f"Saved merged CSV to {MERGED_OUT} ({merged_df.shape[0]} rows)")
 
 
 if __name__ == "__main__":
@@ -89,138 +198,143 @@ if __name__ == "__main__":
 
 
 ===== C:\Users\barte\OneDrive\Pulpit\Studia\ROK III\Semestr 2\football-prediction\scripts\fetch_understat.py =====
+import asyncio
+import aiohttp
 import pandas as pd
-import ast
-import numpy as np
+from understat import Understat
 from pathlib import Path
-import pyarrow.parquet as pq
-import pyarrow as pa
-from src.constants import TEAM_MAP
+from typing import List, Dict, Any
+from src.constants import SEASONS
+import logging
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+RAW_DIR = Path("data/raw")
+RAW_DIR.mkdir(parents=True, exist_ok=True)
+
+UNDERSTAT_LEAGUE_MAP = {
+    "EPL": "EPL",
+    "LALIGA": "La_liga",
+    "BUNDESLIGA": "Bundesliga",
+    "SERIEA": "Serie_A",
+    "LIGUE1": "Ligue_1",
+}
+
+LEAGUES = list(UNDERSTAT_LEAGUE_MAP.keys())
 
 
-def merge_sources() -> None:
-    u = pd.read_csv("data/raw/understat_all.csv")
-    f = pd.read_csv("data/raw/football_data_merged.csv")
-
-    f["date"] = pd.to_datetime(f["date"], dayfirst=False).dt.normalize()
-    u["datetime"] = pd.to_datetime(u["datetime"])
-    u = u[u["datetime"].notna()]
-    u["date"] = u["datetime"].dt.normalize()
-
-    for col in ["h", "a", "goals", "xG"]:
-        u[col] = u[col].apply(ast.literal_eval)
-
-    u["home_goals"] = u["goals"].apply(lambda g: int(g["h"]))
-    u["away_goals"] = u["goals"].apply(lambda g: int(g["a"]))
-    u["xG_home"] = u["xG"].apply(lambda g: float(g["h"]))
-    u["xG_away"] = u["xG"].apply(lambda g: float(g["a"]))
-
-    u["home_team"] = u["h"].apply(lambda d: TEAM_MAP.get(d["title"], d["title"]))
-    u["away_team"] = u["a"].apply(lambda d: TEAM_MAP.get(d["title"], d["title"]))
-
-    merged = f.merge(
-        u[["date", "league", "home_team", "away_team", "xG_home", "xG_away"]],
-        on=["date", "league", "home_team", "away_team"],
-        how="left",
-    )
-
-    merged["bookie_sum"] = (
-        1 / merged["bookie_home"]
-        + 1 / merged["bookie_draw"]
-        + 1 / merged["bookie_away"]
-    )
-    merged["bookie_prob_home"] = (1 / merged["bookie_home"]) / merged["bookie_sum"]
-    merged["bookie_prob_draw"] = (1 / merged["bookie_draw"]) / merged["bookie_sum"]
-    merged["bookie_prob_away"] = (1 / merged["bookie_away"]) / merged["bookie_sum"]
-
-    merged["result"] = np.select(
-        [
-            merged["home_goals"] > merged["away_goals"],
-            merged["home_goals"] < merged["away_goals"],
-        ],
-        ["H", "A"],
-        default="D",
-    )
-
-    merged["date"] = pd.to_datetime(merged["date"], errors="coerce")
-    num_cols = [
-        "home_goals",
-        "away_goals",
-        "xG_home",
-        "xG_away",
-        "bookie_home",
-        "bookie_draw",
-        "bookie_away",
-        "bookie_prob_home",
-        "bookie_prob_draw",
-        "bookie_prob_away",
-    ]
-    merged[num_cols] = merged[num_cols].apply(pd.to_numeric, errors="coerce")
-
-    Path("data/processed").mkdir(parents=True, exist_ok=True)
-
-    table = pa.Table.from_pandas(merged)
-    pq.write_table(table, "data/processed/merged.parquet")
-    print(f" merged.parquet saved  ({merged.shape[0]} rows)")
-
-
-if __name__ == "__main__":
-    merge_sources()
-
-
-===== C:\Users\barte\OneDrive\Pulpit\Studia\ROK III\Semestr 2\football-prediction\scripts\merge_football_data.py =====
-import pandas as pd, numpy as np, re, itertools
-from pathlib import Path
-from src.constants import DIV_MAP
-
-RAW = Path("data/raw")
-
-
-def load_fd() -> pd.DataFrame:
-    rows = []
-    for fp in RAW.glob("fd_*.csv"):
-        m = re.match(r"fd_(?P<div>[A-Z0-9]+)_(?P<season>\d{4}).csv", fp.name)
-        if not m:
-            continue
-        league = DIV_MAP[m["div"]]
-        df = pd.read_csv(
-            fp,
-            usecols=[
-                "Date",
-                "HomeTeam",
-                "AwayTeam",
-                "FTHG",
-                "FTAG",
-                "B365H",
-                "B365D",
-                "B365A",
-            ],
+async def get_understat_data(league: str, season: int) -> List[Dict[str, Any]]:
+    async with aiohttp.ClientSession() as session:
+        understat = Understat(session)
+        data = await understat.get_league_results(
+            league_name=league, season=str(season)
         )
-        df = df.rename(
-            columns={
-                "Date": "date",
-                "HomeTeam": "home_team",
-                "AwayTeam": "away_team",
-                "FTHG": "home_goals",
-                "FTAG": "away_goals",
-                "B365H": "bookie_home",
-                "B365D": "bookie_draw",
-                "B365A": "bookie_away",
-            }
-        )
-        df["league"] = league
-        df["date"] = pd.to_datetime(df["date"], dayfirst=True).dt.date
-        rows.append(df)
-    return pd.concat(rows, ignore_index=True)
+        return data
+
+
+def fetch_all_understat(leagues: List[str], seasons: List[str]) -> pd.DataFrame:
+    all_dfs = []
+    for league in leagues:
+        understat_name = UNDERSTAT_LEAGUE_MAP[league]
+        for season in seasons:
+            year = int("20" + season[:2])
+            logger.info(f"Fetching {league} ({understat_name}) season {year}")
+            try:
+                data = asyncio.run(get_understat_data(understat_name, year))
+                df = pd.DataFrame(data)
+                df["season"] = season
+                df["league"] = league
+                all_dfs.append(df)
+            except Exception as e:
+                logger.warning(f"Failed to fetch {league} {season}: {e}")
+    if not all_dfs:
+        raise ValueError("No data fetched.")
+    return pd.concat(all_dfs, ignore_index=True)
 
 
 def main() -> None:
-    fd_df = load_fd()
-    fd_df.to_csv("data/raw/football_data_merged.csv", index=False)
+    df = fetch_all_understat(LEAGUES, SEASONS)
+    df.to_csv(RAW_DIR / "understat_all.csv", index=False)
+    logger.info(f"Saved Understat data to understat_all.csv ({df.shape[0]} rows)")
 
 
 if __name__ == "__main__":
     main()
+
+
+===== C:\Users\barte\OneDrive\Pulpit\Studia\ROK III\Semestr 2\football-prediction\scripts\infer_match.py =====
+import pandas as pd
+from datetime import datetime
+from pathlib import Path
+import json
+from joblib import load
+
+from src.constants import DATA_PATH, MODEL_PATH, SCHEMA_PATH
+from src.features.build import extract_features
+
+
+def predict_match(home_team: str, away_team: str, date: str) -> dict:
+    # 1. Wczytaj dane
+    df = pd.read_parquet(DATA_PATH / "processed/model_input.parquet")
+    df["date"] = pd.to_datetime(df["date"])
+
+    # 2. Dodaj nowy mecz jako pusty rekord (symulacja)
+    match_date = pd.to_datetime(date)
+    fallback_league = (
+        df["league"].mode(dropna=True)[0]
+        if not df["league"].isna().all()
+        else "Unknown"
+    )
+
+    new_row = {
+        "date": match_date,
+        "home_team": home_team,
+        "away_team": away_team,
+        "xG_home": None,
+        "xG_away": None,
+        "home_goals": None,
+        "away_goals": None,
+        "result": None,
+        "league": fallback_league,
+    }
+
+    new_df = pd.DataFrame([new_row])
+
+    # Uzupełnij brakujące kolumny (np. bookie_home, bookie_draw) na None
+    for col in df.columns:
+        if col not in new_df.columns:
+            new_df[col] = None
+
+    # Ustaw kolejność kolumn jak w df
+    new_df = new_df[df.columns]
+
+    # Dopiero teraz dopasuj typy (z ochroną)
+    for col in new_df.columns:
+        try:
+            new_df[col] = new_df[col].astype(df[col].dtype)
+        except Exception:
+            pass
+
+    df = pd.concat([df, new_df], ignore_index=True)
+
+    # 3. Ekstrakcja cech z uwzględnieniem nowego meczu
+    df = extract_features(df)
+
+    # 4. Załaduj wytrenowany model i schemat cech
+    model = load(MODEL_PATH)
+    with open(SCHEMA_PATH, "r") as f:
+        schema = json.load(f)
+
+    # 5. Predykcja dla nowego meczu (ostatni wiersz)
+    X = df[schema].tail(1)
+    prediction = model.predict(X)[0]
+    probabilities = {
+        label: float(prob)
+        for label, prob in zip(model.classes_, model.predict_proba(X)[0])
+    }
+
+    return {"prediction": prediction, "probabilities": probabilities}
 
 
 ===== C:\Users\barte\OneDrive\Pulpit\Studia\ROK III\Semestr 2\football-prediction\scripts\merge_sources.py =====
@@ -488,9 +602,9 @@ import json
 import argparse
 import joblib
 import os
-from src.data_loader import load_data
-from src.features import extract_features
-from src.model import train_model
+from src.data.loader import FootDataLoader
+from src.features.build import extract_features
+from src.models.model import train_model
 from src.constants import FEATURE_COLUMNS
 
 
@@ -502,7 +616,7 @@ def main():
     )
     args = parser.parse_args()
 
-    df = extract_features(load_data()).dropna(subset=FEATURE_COLUMNS + ["result"])
+    df = extract_features(FootDataLoader().get_training_data()).dropna()
     X, y = df[FEATURE_COLUMNS], df["result"]
 
     params = {}
@@ -521,30 +635,202 @@ if __name__ == "__main__":
     main()
 
 
-===== C:\Users\barte\OneDrive\Pulpit\Studia\ROK III\Semestr 2\football-prediction\scripts\tune_lgbm.py =====
+===== C:\Users\barte\OneDrive\Pulpit\Studia\ROK III\Semestr 2\football-prediction\scripts\run_pipeline.py =====
 import json
+import typer
 from pathlib import Path
+from sklearn.model_selection import TimeSeriesSplit
+from sklearn.metrics import classification_report
+from joblib import dump
 
-from src.data_loader import load_data
-from src.features import extract_features
-from src.model import lgb_grid_search
+from src.data.loader import FootDataLoader
+from src.features.build import extract_features
+from src.pipeline import build_pipeline
 from src.constants import FEATURE_COLUMNS
+
+app = typer.Typer()
+
+
+@app.command()
+def fetch(force: bool = False):
+    FootDataLoader().build(force=force)
+
+
+@app.command()
+def train(params: str = None, outdir: Path = Path("output")):
+
+    df = extract_features(FootDataLoader().get_training_data())
+
+    X, y = df[FEATURE_COLUMNS], df["result"]
+
+    cv = TimeSeriesSplit(n_splits=5)
+    tr, te = list(cv.split(X))[-1]
+    pipe = build_pipeline(params).fit(X.iloc[tr], y.iloc[tr])
+
+    y_pred = pipe.predict(X.iloc[te])
+    print(classification_report(y.iloc[te], y_pred))
+
+    outdir.mkdir(exist_ok=True, parents=True)
+    dump(pipe, outdir / f"model_lgb_{params or 'default'}.pkl")
+    (outdir / "feature_schema.json").write_text(json.dumps(FEATURE_COLUMNS))
+    print("✅ zapisano model i schemat cech")
 
 
 if __name__ == "__main__":
+    app()
 
-    df = extract_features(load_data()).dropna()
-    X = df[FEATURE_COLUMNS]
-    y = df["result"]
 
-    best_params, best_score = lgb_grid_search(X, y)
-    print("Best CV score:", best_score)
-    Path("output").mkdir(exist_ok=True)
-    json.dump(best_params, open("output/lgb_best.json", "w"), indent=4)
-    print("Saved → output/lgb_best.json")
+===== C:\Users\barte\OneDrive\Pulpit\Studia\ROK III\Semestr 2\football-prediction\scripts\tune_lgbm.py =====
+import json, optuna
+from pathlib import Path
+from sklearn.model_selection import TimeSeriesSplit
+from sklearn.metrics import f1_score
+import lightgbm as lgb
+from src.features.build import extract_features
+from src.data.loader import FootDataLoader
+from src.constants import FEATURE_COLUMNS
+
+CONFIG_DIR = Path("configs")
+CONFIG_DIR.mkdir(exist_ok=True, parents=True)
+
+
+def objective(trial):
+    params = {
+        "num_leaves": trial.suggest_int("num_leaves", 31, 127),
+        "max_depth": trial.suggest_int("max_depth", 1, 12),
+        "learning_rate": trial.suggest_float("learning_rate", 0.01, 0.1, log=True),
+        "n_estimators": trial.suggest_int("n_estimators", 400, 1200),
+        "subsample": trial.suggest_float("subsample", 0.6, 1.0),
+        "colsample_bytree": trial.suggest_float("colsample_bytree", 0.6, 1.0),
+        "class_weight": {"H": 1, "A": 1, "D": 2.7},
+        "objective": "multiclass",
+        "num_class": 3,
+        "random_state": 42,
+        "n_jobs": -1,
+    }
+
+    df = extract_features(FootDataLoader().get_training_data())
+
+    X, y = df[FEATURE_COLUMNS], df["result"]
+
+    cv = TimeSeriesSplit(n_splits=3)
+    scores = []
+    for tr, te in cv.split(X):
+        model = lgb.LGBMClassifier(**params, verbose=-1)
+        model.fit(X.iloc[tr], y.iloc[tr])
+        scores.append(f1_score(y.iloc[te], model.predict(X.iloc[te]), average="macro"))
+    return sum(scores) / len(scores)
+
+
+def main():
+    study = optuna.create_study(
+        direction="maximize", sampler=optuna.samplers.TPESampler(seed=42)
+    )
+    study.optimize(objective, n_trials=50, show_progress_bar=True)
+
+    best_params = study.best_trial.params
+    best_params.update(
+        {
+            "objective": "multiclass",
+            "num_class": 3,
+            "class_weight": {"H": 1, "A": 1, "D": 2.7},
+        }
+    )
+    json.dump(best_params, open(CONFIG_DIR / "lgb_best.json", "w"), indent=2)
+    print("💾 configs/lgb_best.json zapisany.")
+
+
+if __name__ == "__main__":
+    main()
+
+
+===== C:\Users\barte\OneDrive\Pulpit\Studia\ROK III\Semestr 2\football-prediction\src\cli.py =====
+import typer
+from pathlib import Path
+
+from scripts.fetch_football_data_uk import main as fetch_fd
+from scripts.fetch_understat import main as fetch_us
+from scripts.merge_sources import merge_sources
+from scripts.model_predict import main as predict_main
+from scripts.tune_lgbm import main as tune_lgbm_main
+from scripts.run_pipeline import train as train_pipeline
+
+app = typer.Typer(help="Football Match Prediction CLI")
+
+
+@app.command()
+def fetch():
+    fetch_fd()
+    fetch_us()
+
+
+@app.command()
+def merge():
+    merge_sources()
+
+
+@app.command()
+def train(params: str = typer.Option("lgb_best", help="Tag z katalogu configs/")):
+    train_pipeline(params=params)
+
+
+@app.command()
+def predict(
+    model_path: Path = typer.Option(
+        "output/model_lgb_lgb_best.pkl", help="Ścieżka do modelu"
+    ),
+    schema_path: Path = typer.Option(
+        "output/feature_schema.json", help="Ścieżka do schematu"
+    ),
+    features: str = typer.Option(..., help="Inline JSON, np. '{\"xG_home\":1.4, ...}'"),
+):
+    """Predykcja pojedynczego meczu"""
+    import sys
+
+    sys.argv = [
+        "model_predict.py",
+        "--model",
+        str(model_path),
+        "--schema",
+        str(schema_path),
+        "--features",
+        features,
+    ]
+    predict_main()
+
+
+@app.command("predict-match")
+def predict_match_cli(
+    home_team: str = typer.Option(..., help="Nazwa gospodarzy"),
+    away_team: str = typer.Option(..., help="Nazwa gości"),
+    date: str = typer.Option(..., help="Data w formacie YYYY-MM-DD"),
+):
+    from scripts.infer_match import predict_match
+    import json
+
+    result = predict_match(home_team, away_team, date)
+    print(json.dumps(result, indent=2))
+
+
+@app.command()
+def tune():
+    """Optymalizacja hiperparametrów modelu LightGBM"""
+    tune_lgbm_main()
+
+
+if __name__ == "__main__":
+    app()
 
 
 ===== C:\Users\barte\OneDrive\Pulpit\Studia\ROK III\Semestr 2\football-prediction\src\constants.py =====
+from pathlib import Path
+
+ROOT = Path(__file__).parent.parent
+DATA_PATH = ROOT / "data"
+MODEL_PATH = ROOT / "output" / "model_lgb_lgb_best.pkl"
+SCHEMA_PATH = ROOT / "output" / "feature_schema.json"
+
+
 DIV_MAP = {
     "E0": "EPL",
     "SP1": "LALIGA",
@@ -552,6 +838,9 @@ DIV_MAP = {
     "I1": "SERIEA",
     "F1": "LIGUE1",
 }
+
+SEASONS = ["2425", "2324", "2223", "2122", "2021", "1920"]
+LEAGUES = list(DIV_MAP.keys())
 
 TEAM_MAP = {
     # ——— Premier League / Championship
@@ -680,8 +969,9 @@ TEAM_MAP = {
 }
 
 FEATURE_COLUMNS: list[str] = [
-    "xG_home",
-    "xG_away",
+    "xG_home_shift",
+    "xG_away_shift",
+    "xg_diff",
     "bookie_prob_home",
     "bookie_prob_draw",
     "bookie_prob_away",
@@ -697,111 +987,15 @@ FEATURE_COLUMNS: list[str] = [
     "away_days_since",
     "elo_home",
     "elo_away",
+    "elo_diff",
     "lambda_home_for",
     "lambda_home_against",
     "lambda_away_for",
     "lambda_away_against",
 ]
 
-
-===== C:\Users\barte\OneDrive\Pulpit\Studia\ROK III\Semestr 2\football-prediction\src\data_loader.py =====
-import pandas as pd
-
-
-def load_data(path: str = "data/processed/model_input.parquet") -> pd.DataFrame:
-    """
-    Loads the pre-filtered model input (only rows with complete xG + bookie odds).
-    """
-    return pd.read_parquet(path)
-
-
-===== C:\Users\barte\OneDrive\Pulpit\Studia\ROK III\Semestr 2\football-prediction\src\features.py =====
-import pandas as pd
-import numpy as np
-
-K_ELO = 20  # szybkość uczenia rankingów Elo
-WINDOW = 5  # rozmiar bufora rolling
-
-
-def extract_features(df: pd.DataFrame) -> pd.DataFrame:
-    """Wylicza wszystkie cechy potrzebne modelowi v2."""
-
-    df = df.sort_values("date").copy()
-
-    # 1️⃣  Podstawowe różnice & punkty
-    df["xg_diff"] = df["xG_home"] - df["xG_away"]
-    df["goal_diff"] = df["home_goals"] - df["away_goals"]
-    df["home_pts"] = df["result"].map({"H": 3, "D": 1, "A": 0})
-    df["away_pts"] = df["result"].map({"H": 0, "D": 1, "A": 3})
-
-    # 2️⃣  Rolling — ostatnie 5 meczów
-    df["home_roll_xg_5"] = df.groupby("home_team")["xg_diff"].transform(
-        lambda s: s.shift().rolling(WINDOW).mean()
-    )
-    df["away_roll_xg_5"] = df.groupby("away_team")["xg_diff"].transform(
-        lambda s: s.shift().rolling(WINDOW).mean()
-    )
-    df["home_roll_gd_5"] = df.groupby("home_team")["goal_diff"].transform(
-        lambda s: s.shift().rolling(WINDOW).mean()
-    )
-    df["away_roll_gd_5"] = df.groupby("away_team")["goal_diff"].transform(
-        lambda s: s.shift().rolling(WINDOW).mean()
-    )
-    df["home_roll_form_5"] = df.groupby("home_team")["home_pts"].transform(
-        lambda s: s.shift().rolling(WINDOW).sum()
-    )
-    df["away_roll_form_5"] = df.groupby("away_team")["away_pts"].transform(
-        lambda s: s.shift().rolling(WINDOW).sum()
-    )
-
-    # 3️⃣  Temporal
-    df["dow"] = df["date"].dt.weekday
-    df["month"] = df["date"].dt.month
-
-    # 4️⃣  Days‑since‑last
-    df["home_prev_date"] = df.groupby("home_team")["date"].shift(1)
-    df["away_prev_date"] = df.groupby("away_team")["date"].shift(1)
-    df["home_days_since"] = (df["date"] - df["home_prev_date"]).dt.days
-    df["away_days_since"] = (df["date"] - df["away_prev_date"]).dt.days
-
-    # 5️⃣  Elo rating (online update)
-    elo_dict: dict[str, float] = {}
-    elo_home, elo_away = [], []
-    for _, row in df.iterrows():
-        h, a = row["home_team"], row["away_team"]
-        elo_dict.setdefault(h, 1500.0)
-        elo_dict.setdefault(a, 1500.0)
-        elo_home.append(elo_dict[h])
-        elo_away.append(elo_dict[a])
-        score_home = (
-            1.0 if row["result"] == "H" else 0.5 if row["result"] == "D" else 0.0
-        )
-        exp_home = 1 / (1 + 10 ** ((elo_dict[a] - elo_dict[h]) / 400))
-        elo_dict[h] += K_ELO * (score_home - exp_home)
-        elo_dict[a] += K_ELO * ((1 - score_home) - (1 - exp_home))
-    df["elo_home"], df["elo_away"] = elo_home, elo_away
-
-    # 6️⃣  Poisson‑lambda (średnia goli do momentu meczu)
-    grp_home = df.groupby("home_team")
-    df["lambda_home_for"] = grp_home["home_goals"].transform(
-        lambda s: s.shift().expanding().mean()
-    )
-    df["lambda_home_against"] = grp_home["away_goals"].transform(
-        lambda s: s.shift().expanding().mean()
-    )
-
-    grp_away = df.groupby("away_team")
-    df["lambda_away_for"] = grp_away["away_goals"].transform(
-        lambda s: s.shift().expanding().mean()
-    )
-    df["lambda_away_against"] = grp_away["home_goals"].transform(
-        lambda s: s.shift().expanding().mean()
-    )
-
-    # 7️⃣  Posprzątaj techniczne kolumny
-    df.drop(columns=["home_prev_date", "away_prev_date"], inplace=True)
-
-    return df
+WEIGHTS_RF = {"H": 1, "A": 1, "D": 1.1}
+WEIGHTS_LGB = {"H": 1, "A": 1, "D": 1.6}
 
 
 ===== C:\Users\barte\OneDrive\Pulpit\Studia\ROK III\Semestr 2\football-prediction\src\metrics.py =====
@@ -840,24 +1034,185 @@ def save_confusion_matrix_plot(y_true, y_pred, path="output/confusion_matrix.png
     plt.close()
 
 
-===== C:\Users\barte\OneDrive\Pulpit\Studia\ROK III\Semestr 2\football-prediction\src\model.py =====
-from typing import Literal, Any, Dict, Tuple
+===== C:\Users\barte\OneDrive\Pulpit\Studia\ROK III\Semestr 2\football-prediction\src\pipeline.py =====
+import json, joblib
+from pathlib import Path
+from sklearn.pipeline import Pipeline
+from src.models.model import get_model
 
+CONFIG_DIR = Path("configs")
+
+
+def _read_params(path: Path):
+    if path.suffix == ".json":
+        return json.load(open(path))
+    return joblib.load(path)
+
+
+def load_params(tag: str | None):
+    if tag is None:
+        return _read_params(CONFIG_DIR / "lgb_default.json")
+    for ext in (".json", ".pkl"):
+        p = CONFIG_DIR / f"{tag}{ext}"
+        if p.exists():
+            return _read_params(p)
+    raise FileNotFoundError(f"brak pliku configs/{tag}.json|pkl")
+
+
+def build_pipeline(param_tag: str | None = None):
+    params = load_params(param_tag)
+    model = get_model("lgb", params=params)
+    return Pipeline([("clf", model)])
+
+
+===== C:\Users\barte\OneDrive\Pulpit\Studia\ROK III\Semestr 2\football-prediction\src\data\loader.py =====
+from pathlib import Path
+from datetime import date
+import pandas as pd
+
+
+def clip_season(
+    df: pd.DataFrame, cutoff: pd.Timestamp = pd.Timestamp("2025-05-15")
+) -> pd.DataFrame:
+    return df[df["date"] <= cutoff].copy()
+
+
+class FootDataLoader:
+    def __init__(self, cache_path: Path = Path("data/processed/model_input.parquet")):
+        self.cache_path = cache_path
+
+    def build(self, force: bool = False):
+        if force or not self.cache_path.exists():
+            raise RuntimeError(
+                "Brak gotowego pliku model_input.parquet – uruchom scripts/merge_sources.py"
+            )
+
+    def get_training_data(self, force: bool = False) -> pd.DataFrame:
+        self.build(force)
+        df = pd.read_parquet(self.cache_path)
+        return clip_season(df)
+
+
+===== C:\Users\barte\OneDrive\Pulpit\Studia\ROK III\Semestr 2\football-prediction\src\features\build.py =====
+import pandas as pd
+import numpy as np
+
+K_ELO = 20
+WINDOW = 5
+
+
+def extract_features(df: pd.DataFrame) -> pd.DataFrame:
+    df = df.sort_values("date").copy()
+
+    df["xG_home_shift"] = df.groupby("home_team")["xG_home"].shift(1)
+    df["xG_away_shift"] = df.groupby("away_team")["xG_away"].shift(1)
+
+    for col in ["xG_home_shift", "xG_away_shift"]:
+        league_mean = df.groupby("league")[col].transform("mean")
+        df[col] = df[col].fillna(league_mean)
+
+    # Wypełnij tylko kolumny liczbowe
+    num_cols = df.select_dtypes(include="number").columns
+    df[num_cols] = df[num_cols].fillna(df[num_cols].mean())
+
+    # Po ewentualnych zmianach typów, przywróć je jawnie
+    df = df.infer_objects(copy=False)
+
+    df["xg_diff"] = df["xG_home_shift"] - df["xG_away_shift"]
+
+    df["goal_diff"] = df["home_goals"] - df["away_goals"]
+    df["home_pts"] = df["result"].map({"H": 3, "D": 1, "A": 0})
+    df["away_pts"] = df["result"].map({"H": 0, "D": 1, "A": 3})
+
+    df["home_roll_xg_5"] = df.groupby("home_team")["xg_diff"].transform(
+        lambda s: s.shift().rolling(WINDOW).mean()
+    )
+    df["away_roll_xg_5"] = df.groupby("away_team")["xg_diff"].transform(
+        lambda s: s.shift().rolling(WINDOW).mean()
+    )
+    df["home_roll_gd_5"] = df.groupby("home_team")["goal_diff"].transform(
+        lambda s: s.shift().rolling(WINDOW).mean()
+    )
+    df["away_roll_gd_5"] = df.groupby("away_team")["goal_diff"].transform(
+        lambda s: s.shift().rolling(WINDOW).mean()
+    )
+    df["home_roll_form_5"] = df.groupby("home_team")["home_pts"].transform(
+        lambda s: s.shift().rolling(WINDOW).sum()
+    )
+    df["away_roll_form_5"] = df.groupby("away_team")["away_pts"].transform(
+        lambda s: s.shift().rolling(WINDOW).sum()
+    )
+
+    df["dow"] = df["date"].dt.weekday
+    df["month"] = df["date"].dt.month
+
+    df["home_prev_date"] = df.groupby("home_team")["date"].shift(1)
+    df["away_prev_date"] = df.groupby("away_team")["date"].shift(1)
+    df["home_days_since"] = (df["date"] - df["home_prev_date"]).dt.days
+    df["away_days_since"] = (df["date"] - df["away_prev_date"]).dt.days
+
+    elo_dict = {}
+    elo_home, elo_away = [], []
+    for _, row in df.iterrows():
+        h, a = row["home_team"], row["away_team"]
+        elo_dict.setdefault(h, 1500.0)
+        elo_dict.setdefault(a, 1500.0)
+        elo_home.append(elo_dict[h])
+        elo_away.append(elo_dict[a])
+        score_home = (
+            1.0 if row["result"] == "H" else 0.5 if row["result"] == "D" else 0.0
+        )
+        exp_home = 1 / (1 + 10 ** ((elo_dict[a] - elo_dict[h]) / 400))
+        elo_dict[h] += K_ELO * (score_home - exp_home)
+        elo_dict[a] += K_ELO * ((1 - score_home) - (1 - exp_home))
+    df["elo_home"], df["elo_away"] = elo_home, elo_away
+    df["elo_diff"] = df["elo_home"] - df["elo_away"]
+
+    grp_home = df.groupby("home_team")
+    df["lambda_home_for"] = grp_home["home_goals"].transform(
+        lambda s: s.shift().expanding().mean()
+    )
+    df["lambda_home_against"] = grp_home["away_goals"].transform(
+        lambda s: s.shift().expanding().mean()
+    )
+
+    grp_away = df.groupby("away_team")
+    df["lambda_away_for"] = grp_away["away_goals"].transform(
+        lambda s: s.shift().expanding().mean()
+    )
+    df["lambda_away_against"] = grp_away["home_goals"].transform(
+        lambda s: s.shift().expanding().mean()
+    )
+
+    df.drop(
+        columns=[
+            "home_prev_date",
+            "away_prev_date",
+            "xG_home",
+            "xG_away",
+        ],
+        inplace=True,
+    )
+
+    return df
+
+
+===== C:\Users\barte\OneDrive\Pulpit\Studia\ROK III\Semestr 2\football-prediction\src\models\model.py =====
+from typing import Literal, Any, Dict
 import lightgbm as lgb
 from catboost import CatBoostClassifier
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.metrics import classification_report, f1_score
-from sklearn.model_selection import GridSearchCV
+from src.constants import WEIGHTS_RF, WEIGHTS_LGB
 
 Algo = Literal["rf", "lgb", "cat"]
 
 
-def _build_rf(params: Dict[str, Any] | None = None) -> RandomForestClassifier:
+def _build_rf(params: Dict[str, Any] | None = None):
     cfg = dict(
         n_estimators=300,
         max_depth=10,
         min_samples_leaf=3,
-        class_weight="balanced",
+        class_weight=WEIGHTS_RF,
         random_state=42,
         n_jobs=-1,
     )
@@ -866,25 +1221,21 @@ def _build_rf(params: Dict[str, Any] | None = None) -> RandomForestClassifier:
     return RandomForestClassifier(**cfg)
 
 
-def _build_lgb(params: Dict[str, Any] | None = None) -> lgb.LGBMClassifier:
-    cfg = dict(
+def _build_lgb(params: Dict[str, Any] | None = None):
+    if not params:
+        params = {}
+    base = dict(
         objective="multiclass",
         num_class=3,
-        n_estimators=600,
-        learning_rate=0.03,
-        max_depth=-1,
-        subsample=0.8,
-        colsample_bytree=0.8,
-        class_weight="balanced",
+        class_weight=WEIGHTS_LGB,
         random_state=42,
         n_jobs=-1,
     )
-    if params:
-        cfg.update(params)
-    return lgb.LGBMClassifier(**cfg)
+    base.update(params)
+    return lgb.LGBMClassifier(**base, verbose=-1)
 
 
-def _build_cat(params: Dict[str, Any] | None = None) -> CatBoostClassifier:
+def _build_cat(params: Dict[str, Any] | None = None):
     cfg = dict(
         loss_function="MultiClass",
         iterations=800,
@@ -900,129 +1251,6 @@ def _build_cat(params: Dict[str, Any] | None = None) -> CatBoostClassifier:
 
 
 def get_model(algo: Algo = "rf", params: Dict[str, Any] | None = None):
-    if algo == "rf":
-        return _build_rf(params)
-    if algo == "lgb":
-        return _build_lgb(params)
-    if algo == "cat":
-        return _build_cat(params)
-    raise ValueError(f"Unknown algo: {algo}")
+    return {"rf": _build_rf, "lgb": _build_lgb, "cat": _build_cat}[algo](params)
 
 
-def train_model(X, y, *, algo: Algo = "rf", params=None):
-    model = get_model(algo, params)
-    model.fit(X, y)
-    return model
-
-
-def evaluate_model(y_true, y_pred, verbose: bool = True) -> Dict[str, float]:
-    if verbose:
-        print(classification_report(y_true, y_pred))
-    return {
-        "macro_f1": f1_score(y_true, y_pred, average="macro"),
-        "accuracy": (y_true == y_pred).mean(),
-    }
-
-
-lgb_param_grid = {
-    "num_leaves": [31, 63],
-    "max_depth": [-1, 8],
-    "learning_rate": [0.03, 0.05],
-    "n_estimators": [500, 800],
-    "subsample": [0.8, 1.0],
-    "colsample_bytree": [0.8, 1.0],
-}
-
-
-def lgb_grid_search(X, y, cv=3, scoring="f1_macro") -> Tuple[Dict[str, Any], float]:
-    gs = GridSearchCV(
-        _build_lgb(), lgb_param_grid, cv=cv, scoring=scoring, n_jobs=-1, verbose=1
-    )
-    gs.fit(X, y)
-    return gs.best_params_, gs.best_score_
-
-
-===== C:\Users\barte\OneDrive\Pulpit\Studia\ROK III\Semestr 2\football-prediction\src\pipeline.py =====
-import argparse
-import json
-import logging
-from pathlib import Path
-
-import joblib
-import pandas as pd
-from sklearn.ensemble import StackingClassifier
-from sklearn.model_selection import TimeSeriesSplit
-
-from src.constants import FEATURE_COLUMNS
-from src.data_loader import load_data
-from src.features import extract_features
-from src.model import train_model, evaluate_model, get_model
-from src.metrics import (
-    save_classification_report_txt,
-    save_classification_report_json,
-    save_confusion_matrix_plot,
-)
-
-logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
-logger = logging.getLogger("footpred")
-
-
-def run_pipeline(
-    *,
-    algo: str = "lgb",  # "rf", "cat" albo specjalne "stack"
-    input_path: str = "data/processed/model_input.parquet",
-    output_dir: str = "output",
-) -> None:
-    logger.info("Ładowanie danych → %s", input_path)
-    df = extract_features(load_data(input_path)).dropna(subset=FEATURE_COLUMNS)
-    X, y = df[FEATURE_COLUMNS], df["result"]
-
-    # TimeSeriesSplit — ostatni fold traktujemy jako test
-    cv = TimeSeriesSplit(n_splits=5)
-    train_idx, test_idx = list(cv.split(X))[-1]
-    X_tr, X_te, y_tr, y_te = (
-        X.iloc[train_idx],
-        X.iloc[test_idx],
-        y.iloc[train_idx],
-        y.iloc[test_idx],
-    )
-
-    # wybór modelu
-    if algo == "stack":
-        base = [
-            ("lgb", get_model("lgb")),
-            ("cat", get_model("cat")),
-            ("rf", get_model("rf")),
-        ]
-        model = StackingClassifier(
-            estimators=base,
-            final_estimator=get_model("lgb"),
-            passthrough=True,
-            n_jobs=-1,
-        ).fit(X_tr, y_tr)
-    else:
-        model = train_model(X_tr, y_tr, algo=algo)
-
-    # ewaluacja
-    y_pred = model.predict(X_te)
-    metrics = evaluate_model(y_te, y_pred, verbose=False)
-    logger.info("Acc %.3f | macro‑F1 %.3f", metrics["accuracy"], metrics["macro_f1"])
-
-    # zapisz artefakty
-    out = Path(output_dir)
-    out.mkdir(exist_ok=True, parents=True)
-    joblib.dump(model, out / f"final_model_{algo}.pkl")
-    (out / "feature_schema.json").write_text(json.dumps(FEATURE_COLUMNS, indent=2))
-    save_confusion_matrix_plot(y_te, y_pred, out / "confusion_matrix.png")
-    save_classification_report_txt(y_te, y_pred, out / "report.txt")
-    save_classification_report_json(y_te, y_pred, out / "metrics.json")
-    logger.info("Artefakty zapisane w %s", out.resolve())
-
-
-if __name__ == "__main__":
-    p = argparse.ArgumentParser()
-    p.add_argument("--algo", choices=["rf", "lgb", "cat", "stack"], default="stack")
-    p.add_argument("--input", default="data/processed/model_input.parquet")
-    p.add_argument("--output", default="output")
-    args = p.parse_args()
-    run_pipeline(algo=args.algo, input_path=args.input, output_dir=args.output)

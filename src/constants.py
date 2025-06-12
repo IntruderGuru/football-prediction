@@ -1,3 +1,11 @@
+from pathlib import Path
+
+ROOT = Path(__file__).parent.parent
+DATA_PATH = ROOT / "data"
+MODEL_PATH = ROOT / "output" / "model_lgb_lgb_best.pkl"
+SCHEMA_PATH = ROOT / "output" / "feature_schema.json"
+
+
 DIV_MAP = {
     "E0": "EPL",
     "SP1": "LALIGA",
@@ -136,8 +144,9 @@ TEAM_MAP = {
 }
 
 FEATURE_COLUMNS: list[str] = [
-    "xG_home",
-    "xG_away",
+    "xG_home_shift",
+    "xG_away_shift",
+    "xg_diff",
     "bookie_prob_home",
     "bookie_prob_draw",
     "bookie_prob_away",
@@ -153,6 +162,7 @@ FEATURE_COLUMNS: list[str] = [
     "away_days_since",
     "elo_home",
     "elo_away",
+    "elo_diff",
     "lambda_home_for",
     "lambda_home_against",
     "lambda_away_for",
@@ -160,4 +170,4 @@ FEATURE_COLUMNS: list[str] = [
 ]
 
 WEIGHTS_RF = {"H": 1, "A": 1, "D": 1.1}
-WEIGHTS_LGB = {"H": 1, "A": 1, "D": 1.2}
+WEIGHTS_LGB = {"H": 1, "A": 1, "D": 1.6}
