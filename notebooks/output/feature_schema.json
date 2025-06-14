@@ -1,0 +1,21 @@
+[
+  "bookie_prob_home",
+  "bookie_prob_draw",
+  "bookie_prob_away",
+  "home_roll_xg_5",
+  "away_roll_xg_5",
+  "home_roll_gd_5",
+  "away_roll_gd_5",
+  "home_roll_form_5",
+  "away_roll_form_5",
+  "dow",
+  "month",
+  "home_days_since",
+  "away_days_since",
+  "elo_home",
+  "elo_away",
+  "lambda_home_for",
+  "lambda_home_against",
+  "lambda_away_for",
+  "lambda_away_against"
+]

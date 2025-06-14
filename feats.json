@@ -1,0 +1,21 @@
+﻿{
+  "bookie_prob_home": 0.4,
+  "bookie_prob_draw": 0.3,
+  "bookie_prob_away": 0.3,
+  "home_roll_xg_5": 0,
+  "away_roll_xg_5": 0,
+  "home_roll_gd_5": 0,
+  "away_roll_gd_5": 0,
+  "home_roll_form_5": 0,
+  "away_roll_form_5": 0,
+  "dow": 2,
+  "month": 8,
+  "home_days_since": 7,
+  "away_days_since": 6,
+  "elo_home": 1500,
+  "elo_away": 1500,
+  "lambda_home_for": 1.4,
+  "lambda_home_against": 1.0,
+  "lambda_away_for": 1.2,
+  "lambda_away_against": 1.3
+}

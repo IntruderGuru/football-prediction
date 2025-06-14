@@ -24,7 +24,7 @@ logger = logging.getLogger("footpred")
 
 def run_pipeline(
     *,
-    algo: str = "lgb",  # "rf", "cat" albo specjalne "stack"
+    algo: str = "lgb",
     input_path: str = "data/processed/model_input.parquet",
     output_dir: str = "output",
 ) -> None:
@@ -35,7 +35,6 @@ def run_pipeline(
     print("Different y classes counts:")
     print(y.value_counts())
 
-    # TimeSeriesSplit — ostatni fold traktujemy jako test
     cv = TimeSeriesSplit(n_splits=5)
     train_idx, test_idx = list(cv.split(X))[-1]
     X_tr, X_te, y_tr, y_te = (
@@ -48,7 +47,17 @@ def run_pipeline(
     sm = SMOTE(random_state=42)
     X_resampled, y_resampled = sm.fit_resample(X_tr, y_tr)
 
-    # wybór modelu
+    params = {}
+    if algo == "lgb":
+        tuning_path = Path("output/lgb_best.json")
+        if tuning_path.exists():
+            logger.info("Wczytywanie najlepszych parametrów z tuningu LGBM")
+            params = json.loads(tuning_path.read_text())
+        else:
+            logger.warning(
+                "Brak pliku output/lgb_best.json – używane będą domyślne parametry."
+            )
+
     if algo == "stack":
         base = [
             ("lgb", get_model("lgb")),
@@ -62,14 +71,12 @@ def run_pipeline(
             n_jobs=-1,
         ).fit(X_resampled, y_resampled)
     else:
-        model = train_model(X_resampled, y_resampled, algo=algo)
+        model = train_model(X_resampled, y_resampled, algo=algo, params=params)
 
-    # ewaluacja
     y_pred = model.predict(X_te)
     metrics = evaluate_model(y_te, y_pred, verbose=False)
     logger.info("Acc %.3f | macro‑F1 %.3f", metrics["accuracy"], metrics["macro_f1"])
 
-    # zapisz artefakty
     out = Path(output_dir)
     out.mkdir(exist_ok=True, parents=True)
     joblib.dump(model, out / f"final_model_{algo}.pkl")

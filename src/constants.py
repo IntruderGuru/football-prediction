@@ -136,8 +136,6 @@ TEAM_MAP = {
 }
 
 FEATURE_COLUMNS: list[str] = [
-    "xG_home",
-    "xG_away",
     "bookie_prob_home",
     "bookie_prob_draw",
     "bookie_prob_away",
@@ -160,4 +158,4 @@ FEATURE_COLUMNS: list[str] = [
 ]
 
 WEIGHTS_RF = {"H": 1, "A": 1, "D": 1.1}
-WEIGHTS_LGB = {"H": 1, "A": 1, "D": 1.2}
+WEIGHTS_LGB = {"H": 1, "A": 1, "D": 1}

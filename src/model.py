@@ -1,11 +1,12 @@
 from typing import Literal, Any, Dict, Tuple
 
-from src.constants import WEIGHTS_LGB, WEIGHTS_RF
 import lightgbm as lgb
 from catboost import CatBoostClassifier
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import classification_report, f1_score
-from sklearn.model_selection import GridSearchCV
+from sklearn.model_selection import GridSearchCV, TimeSeriesSplit
+
+from src.constants import WEIGHTS_LGB, WEIGHTS_RF
 
 Algo = Literal["rf", "lgb", "cat"]
 
@@ -67,7 +68,7 @@ def get_model(algo: Algo = "rf", params: Dict[str, Any] | None = None):
     raise ValueError(f"Unknown algo: {algo}")
 
 
-def train_model(X, y, *, algo: Algo = "rf", params=None):
+def train_model(X, y, *, algo: Algo = "rf", params: Dict[str, Any] | None = None):
     model = get_model(algo, params)
     model.fit(X, y)
     return model
@@ -92,9 +93,22 @@ lgb_param_grid = {
 }
 
 
-def lgb_grid_search(X, y, cv=3, scoring="f1_macro") -> Tuple[Dict[str, Any], float]:
+def lgb_grid_search(
+    X, y, cv: int = 5, scoring: str = "f1_macro"
+) -> Tuple[Dict[str, Any], float]:
+
+    tscv = TimeSeriesSplit(n_splits=cv)
+
+    base_model = _build_lgb()
+
     gs = GridSearchCV(
-        _build_lgb(), lgb_param_grid, cv=cv, scoring=scoring, n_jobs=-1, verbose=1
+        estimator=base_model,
+        param_grid=lgb_param_grid,
+        scoring=scoring,
+        cv=tscv,
+        n_jobs=-1,
+        verbose=1,
     )
     gs.fit(X, y)
+
     return gs.best_params_, gs.best_score_
