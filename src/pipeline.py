@@ -45,6 +45,9 @@ def run_pipeline(
         y.iloc[test_idx],
     )
 
+    print("TUU:")
+    print(len(X_tr.columns.tolist()))
+
     sm = SMOTE(random_state=42)
     X_resampled, y_resampled = sm.fit_resample(X_tr, y_tr)
 
