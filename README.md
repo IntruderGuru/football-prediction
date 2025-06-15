@@ -74,10 +74,6 @@ python cli.py evaluate --model-path output/final_pipeline_model_lgb.pkl
 ## 🔮 Predict single match outcome
 
 ```bash
-python cli.py predict \
-  --home "Arsenal" \
-  --away "Chelsea" \
-  --date "2025-08-01" \
-  --model-path output/final_pipeline_model_lgb.pkl
+python cli.py predict --home "Chelsea" --away "Arsenal" --date "2020-01-21" --model-path output/final_pipeline_model_lgb.pkl
 
 ```  

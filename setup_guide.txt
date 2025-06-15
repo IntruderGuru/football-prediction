@@ -20,7 +20,6 @@ $env:PYTHONPATH="."
 
 # Przetwarzanie danych
 python scripts/fetch_football_data_uk.py
-python scripts/merge_football_data.py
 python scripts/fetch_understat.py
 python scripts/merge_sources.py
 

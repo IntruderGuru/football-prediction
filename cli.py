@@ -2,10 +2,11 @@ import argparse
 import joblib
 import pandas as pd
 
-from src.pipeline import run_pipeline
+from src.pipeline import run_pipeline, get_evaluation_split
 from src.model import evaluate_model
 from src.data_loader import load_data
 from src.features import extract_features
+from scripts.simulate import simulate_match_input
 from src.constants import FEATURE_COLUMNS
 
 
@@ -47,8 +48,7 @@ def main():
 
     elif args.command == "evaluate":
         model = joblib.load(args.model_path)
-        df = extract_features(load_data(args.input)).dropna(subset=FEATURE_COLUMNS)
-        X, y = df[FEATURE_COLUMNS], df["result"]
+        X, y = get_evaluation_split(args.input)
         y_pred = model.predict(X)
         metrics = evaluate_model(y, y_pred, verbose=True)
         print(
@@ -60,13 +60,12 @@ def main():
         df = extract_features(load_data("data/processed/model_input.parquet")).dropna(
             subset=FEATURE_COLUMNS
         )
-        match_row = df.query(
-            "home_team == @args.home and away_team == @args.away and date == @args.date"
-        )
+        match_row = simulate_match_input(df, args.home, args.away, args.date)
         if match_row.empty:
             print("❌ Match not found.")
             return
-        X = match_row[FEATURE_COLUMNS]
+        X = match_row[FEATURE_COLUMNS].astype(float)
+
         pred = model.predict(X)[0]
         print(f"⚽ Prediction for {args.home} vs {args.away} on {args.date}: {pred}")
 

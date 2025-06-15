@@ -60,6 +60,8 @@ def run_pipeline(
     # Handle class imbalance using SMOTE
     sm = SMOTE(random_state=42)
     X_resampled, y_resampled = sm.fit_resample(X_tr, y_tr)
+    print("After SMOTE class distribution:", y_resampled.value_counts())
+    print("y_resampled type:", type(y_resampled.iloc[0]))
 
     # Train the selected model
     if algo == "stack":
@@ -110,6 +112,17 @@ def run_pipeline(
         save_classification_report_txt(y_te, y_pred, out / "report.txt")
         save_classification_report_json(y_te, y_pred, out / "metrics.json")
         logger.info("Evaluation artifacts saved to %s", out.resolve())
+
+
+def get_evaluation_split(input_path: str) -> tuple:
+    """Return evaluation split from the last fold of TimeSeriesSplit."""
+    df = extract_features(load_data(input_path)).dropna(subset=FEATURE_COLUMNS)
+    X, y = df[FEATURE_COLUMNS], df["result"]
+
+    cv = TimeSeriesSplit(n_splits=5)
+    train_idx, test_idx = list(cv.split(X))[-1]
+    X_te, y_te = X.iloc[test_idx], y.iloc[test_idx]
+    return X_te, y_te
 
 
 if __name__ == "__main__":
