@@ -1,4 +1,3 @@
-# scripts/tune_lgbm.py
 import json
 from pathlib import Path
 
@@ -11,21 +10,20 @@ from src.constants import FEATURE_COLUMNS, WEIGHTS_LGB
 from src.data_loader import load_data
 from src.features import extract_features
 
-# ───────── KONFIG ────────────────────────────────────────────────────────────
-N_SPLITS = 5  # tyle samo co w pipeline
-EARLY_STOP = 50  # patience
-N_ESTIM = 2000  # maks. liczba drzew (przy early stop i tak spadnie)
-N_TRIALS = 150  # zwiększ na nocny run
+# Configuration
+N_SPLITS = 5
+EARLY_STOP = 50
+N_ESTIM = 2000
+N_TRIALS = 150
 OUT_JSON = Path("output/lgb_best.json")
-OBJ = "multiclass"  # lub "multiclassova" dla focal-loss
-USE_WEIGHTS = True  # =False jeśli chcesz focal-loss
-# ──────────────────────────────────────────────────────────────────────────────
+OBJ = "multiclass"
+USE_WEIGHTS = True
 
 
 def objective(trial: optuna.Trial) -> float:
-    # ---------------- losowanie parametrów ----------------
+    # Sample hyperparameters
     params = dict(
-        objective=OBJ,  # "multiclass" lub "multiclassova"
+        objective=OBJ,
         num_class=3,
         n_estimators=N_ESTIM,
         learning_rate=trial.suggest_float("learning_rate", 0.03, 0.15, log=True),
@@ -41,18 +39,15 @@ def objective(trial: optuna.Trial) -> float:
     )
     if USE_WEIGHTS:
         params["class_weight"] = WEIGHTS_LGB
-    else:  # focal-loss wariant
+    else:
         params.update(dict(alpha=0.75, gamma=1.5))
 
-    # ---------------- TimeSeries CV -----------------------
     f1_scores = []
     for tr_idx, val_idx in cv.split(X):
         X_tr, X_val = X.iloc[tr_idx], X.iloc[val_idx]
         y_tr, y_val = y.iloc[tr_idx], y.iloc[val_idx]
 
-        sample_w = None
-        if USE_WEIGHTS:
-            sample_w = y_tr.map(WEIGHTS_LGB).values
+        sample_w = y_tr.map(WEIGHTS_LGB).values if USE_WEIGHTS else None
 
         model = lgb.LGBMClassifier(**params)
         model.fit(
@@ -65,19 +60,17 @@ def objective(trial: optuna.Trial) -> float:
         )
         f1_scores.append(f1_score(y_val, model.predict(X_val), average="macro"))
 
-    # ---------------- zwrot do Optuny --------------------
     return sum(f1_scores) / len(f1_scores)
 
 
 if __name__ == "__main__":
-    # ── przygotowanie danych (jednorazowo w pamięci) ────────────────────────
+    # Prepare data once in memory
     df = extract_features(load_data()).dropna(subset=FEATURE_COLUMNS)
     X = df[FEATURE_COLUMNS]
     y = df["result"]
-
     cv = TimeSeriesSplit(n_splits=N_SPLITS, gap=7)
 
-    # ── Optuna: Bayesian TPE ────────────────────────────────────────────────
+    # Run Optuna with TPE
     study = optuna.create_study(
         direction="maximize",
         sampler=optuna.samplers.TPESampler(seed=42),
@@ -86,11 +79,11 @@ if __name__ == "__main__":
     study.optimize(objective, n_trials=N_TRIALS, show_progress_bar=True)
 
     print("\nBest macro-F1:", round(study.best_value, 4))
-    print("Best params :")
+    print("Best params:")
     for k, v in study.best_params.items():
         print(f"  {k}: {v}")
 
     OUT_JSON.parent.mkdir(exist_ok=True)
     with open(OUT_JSON, "w") as f:
         json.dump(study.best_params, f, indent=2)
-    print("\n⚙️  Saved best parameters to", OUT_JSON.resolve())
+    print("\nSaved best parameters to", OUT_JSON.resolve())

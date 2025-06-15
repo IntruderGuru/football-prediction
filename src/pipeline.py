@@ -84,9 +84,6 @@ def run_pipeline(
             if tuning_file.exists():
                 logger.info("Loading tuned LGBM parameters")
                 raw = json.loads(tuning_file.read_text())
-                # map short keys to LGBM params
-                key_map = {"lr": "learning_rate", "colsample": "colsample_bytree"}
-                params = {key_map.get(k, k): v for k, v in raw.items()}
 
             else:
                 logger.warning("No tuning file found, using defaults")
@@ -115,9 +112,11 @@ def run_pipeline(
         (res_dir / "feature_schema.json").write_text(
             json.dumps(FEATURE_COLUMNS, indent=2)
         )
-        save_confusion_matrix_plot(y_te, y_pred, res_dir / "confusion_matrix.png")
-        save_classification_report_txt(y_te, y_pred, res_dir / "report.txt")
-        save_classification_report_json(y_te, y_pred, res_dir / "metrics.json")
+        save_confusion_matrix_plot(
+            y_te, y_pred, res_dir / "confusion_matrix_{algo}.png"
+        )
+        save_classification_report_txt(y_te, y_pred, res_dir / "report_{algo}.txt")
+        save_classification_report_json(y_te, y_pred, res_dir / "metrics_{algo}.json")
         logger.info("Artifacts saved to %s", res_dir.resolve())
 
 
