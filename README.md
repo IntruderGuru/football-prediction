@@ -69,11 +69,11 @@ python cli.py train --algo lgb --save
 ## 📊 Evaluate a trained model
 
 ```bash
-python cli.py evaluate --model-path output/final_pipeline_model_lgb.pkl
+python cli.py evaluate --model-path models/final_pipeline_model_lgb.pkl
 ```
 ## 🔮 Predict single match outcome
 
 ```bash
-python cli.py predict --home "Chelsea" --away "Arsenal" --date "2020-01-21" --model-path output/final_pipeline_model_lgb.pkl
+python cli.py predict --home "Chelsea" --away "Arsenal" --date "2020-01-21" --model-path models/final_pipeline_model_lgb.pkl
 
 ```  

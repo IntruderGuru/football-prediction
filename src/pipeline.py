@@ -26,7 +26,7 @@ def run_pipeline(
     *,
     algo: str = "lgb",  # model to train: "rf", "cat", "lgb", or "stack"
     input_path: str = "data/processed/model_input.parquet",
-    output_dir: str = "output",
+    output_dir: str = "models",
     save: bool = False,  # whether to save model and artifacts
 ) -> None:
     logger.info("Loading data from → %s", input_path)
@@ -107,10 +107,14 @@ def run_pipeline(
         joblib.dump(model, model_path)
         logger.info("Model saved to: %s", model_path.name)
 
-        (out / "feature_schema.json").write_text(json.dumps(FEATURE_COLUMNS, indent=2))
-        save_confusion_matrix_plot(y_te, y_pred, out / "confusion_matrix.png")
-        save_classification_report_txt(y_te, y_pred, out / "report.txt")
-        save_classification_report_json(y_te, y_pred, out / "metrics.json")
+        output_dir = f"output/{algo}_results"
+        out = Path(output_dir)
+        (out / f"feature_schema_{algo}.json").write_text(
+            json.dumps(FEATURE_COLUMNS, indent=2)
+        )
+        save_confusion_matrix_plot(y_te, y_pred, out / f"confusion_matrix_{algo}.png")
+        save_classification_report_txt(y_te, y_pred, out / f"report_{algo}.txt")
+        save_classification_report_json(y_te, y_pred, out / f"metrics_{algo}.json")
         logger.info("Evaluation artifacts saved to %s", out.resolve())
 
 
@@ -128,8 +132,8 @@ def get_evaluation_split(input_path: str) -> tuple:
 if __name__ == "__main__":
     p = argparse.ArgumentParser()
     p.add_argument("--algo", choices=["rf", "lgb", "cat", "stack"], default="lgb")
-    p.add_argument("--input", default="data/processed/model_input.parquet")
-    p.add_argument("--output", default="output")
+    p.add_argument("--input", default="data/praocessed/model_input.parquet")
+    p.add_argument("--output", default="models")
     p.add_argument(
         "--save", action="store_true", help="Save model and evaluation artifacts"
     )

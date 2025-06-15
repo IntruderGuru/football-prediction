@@ -21,7 +21,7 @@ def main():
         "--algo", choices=["rf", "lgb", "cat", "stack"], default="lgb"
     )
     train_parser.add_argument("--input", default="data/processed/model_input.parquet")
-    train_parser.add_argument("--output", default="output")
+    train_parser.add_argument("--output", default="models")
     train_parser.add_argument("--save", action="store_true")
 
     # Evaluate
