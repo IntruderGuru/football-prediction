@@ -138,16 +138,17 @@ TEAM_MAP = {
 FEATURE_COLUMNS: list[str] = [
     "xG_home",
     "xG_away",
+    "xG_home_roll",
+    "xG_away_roll",
     "bookie_prob_home",
     "bookie_prob_draw",
     "bookie_prob_away",
-    "home_roll_xg_5",
-    "away_roll_xg_5",
-    "home_roll_gd_5",
-    "away_roll_gd_5",
-    "home_roll_form_5",
-    "away_roll_form_5",
-    "dow",
+    "home_roll_xg_against",
+    "away_roll_xg_against",
+    "home_roll_gd",
+    "away_roll_gd",
+    "home_roll_pts",
+    "away_roll_pts",
     "month",
     "home_days_since",
     "away_days_since",
@@ -157,7 +158,26 @@ FEATURE_COLUMNS: list[str] = [
     "lambda_home_against",
     "lambda_away_for",
     "lambda_away_against",
+    "elo_diff",
+    "xg_diff_roll",
+    "form_momentum",
+    "lambda_attack_ratio",
+    "bookie_form_interact",
+    "bookie_rest_draw",
+    "elo_xg_ratio",
+    "home_xg_std",
+    "away_xg_std",
+    "xG_home_ewm",
+    "xG_away_ewm",
+    "elo_change_home",
+    "elo_change_away",
+    "avg_goals_home",
+    "avg_goals_away",
+    "xg_elo_interact",
+    "bookie_draw_balance",
+    "form_rest_interact",
 ]
 
-WEIGHTS_RF = {"H": 1, "A": 1, "D": 1.1}
-WEIGHTS_LGB = {"H": 1, "A": 1, "D": 1.2}
+
+WEIGHTS_RF = {"H": 1, "A": 1, "D": 2.0}
+WEIGHTS_LGB = {"H": 1, "A": 1, "D": 2.2}

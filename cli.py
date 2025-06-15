@@ -9,6 +9,8 @@ from src.features import extract_features
 from scripts.simulate import simulate_match_input
 from src.constants import FEATURE_COLUMNS
 
+import matplotlib.pyplot as plt
+
 
 def main():
     parser = argparse.ArgumentParser(description="Football Prediction CLI")
@@ -56,10 +58,20 @@ def main():
         model = joblib.load(args.model_path)
         X, y = get_evaluation_split(args.input)
         y_pred = model.predict(X)
-        metrics = evaluate_model(y, y_pred, verbose=True)
+        metrics = evaluate_model(y, y_pred, X_eval=X, model=model, verbose=True)
         print(
-            f"Evaluation - Accuracy: {metrics['accuracy']:.3f} | Macro-F1: {metrics['macro_f1']:.3f}"
+            f"Evaluation - Accuracy: {metrics['accuracy']:.3f} | Macro-F1: {metrics['macro_f1']:.3f} | log_loss: {metrics['log_loss']:.4f}"
         )
+        importances = model.feature_importances_
+        features = X.columns
+        sorted_idx = importances.argsort()[::-1]
+
+        plt.figure(figsize=(10, 6))
+        plt.barh(range(len(features)), importances[sorted_idx])
+        plt.yticks(range(len(features)), [features[i] for i in sorted_idx])
+        plt.title("Feature Importances")
+        plt.gca().invert_yaxis()
+        plt.show()
 
     elif args.command == "predict":
         model = joblib.load(args.model_path)

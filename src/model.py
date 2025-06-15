@@ -4,7 +4,7 @@ from src.constants import WEIGHTS_LGB, WEIGHTS_RF
 import lightgbm as lgb
 from catboost import CatBoostClassifier
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.metrics import classification_report, f1_score
+from sklearn.metrics import classification_report, f1_score, log_loss
 from sklearn.model_selection import GridSearchCV
 import numpy as np
 
@@ -42,7 +42,7 @@ def _build_lgb(params: Dict[str, Any] | None = None) -> lgb.LGBMClassifier:
     )
     if params:
         cfg.update(params)
-    return lgb.LGBMClassifier(**cfg)
+    return lgb.LGBMClassifier(**cfg, verbose=-1)
 
 
 def _build_cat(params: Dict[str, Any] | None = None) -> CatBoostClassifier:
@@ -79,7 +79,9 @@ def train_model(X, y, *, algo: Algo = "rf", params=None):
     return model
 
 
-def evaluate_model(y_true, y_pred, verbose: bool = True) -> Dict[str, float]:
+def evaluate_model(
+    y_true, y_pred, X_eval, model, verbose: bool = True
+) -> Dict[str, float]:
     """
     Evaluate model predictions using macro F1 and accuracy.
 
@@ -92,15 +94,21 @@ def evaluate_model(y_true, y_pred, verbose: bool = True) -> Dict[str, float]:
     return {
         "macro_f1": f1_score(y_true, y_pred, average="macro"),
         "accuracy": (y_true == y_pred).mean(),
+        "log_loss": log_loss(
+            y_true, model.predict_proba(X_eval), labels=["H", "D", "A"]
+        ),
     }
 
 
 # Grid of hyperparameters for LightGBM
 lgb_param_grid = {
-    "num_leaves": [31, 63],
-    "max_depth": [-1, 8],
-    "learning_rate": [0.03, 0.05],
+    "num_leaves": [31, 63, 127],
+    "max_depth": [-1, 8, 16],
+    "learning_rate": [0.01, 0.03, 0.05, 0.1],
     "n_estimators": [500, 800],
+    "min_child_samples": [20, 50, 100],
+    "reg_alpha": [0.0, 0.1, 1.0],
+    "reg_lambda": [0.0, 0.1, 1.0],
     "subsample": [0.8, 1.0],
     "colsample_bytree": [0.8, 1.0],
 }
