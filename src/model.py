@@ -6,11 +6,13 @@ from catboost import CatBoostClassifier
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import classification_report, f1_score
 from sklearn.model_selection import GridSearchCV
+import numpy as np
 
 Algo = Literal["rf", "lgb", "cat"]
 
 
 def _build_rf(params: Dict[str, Any] | None = None) -> RandomForestClassifier:
+    """Build a Random Forest classifier with default or custom parameters."""
     cfg = dict(
         n_estimators=300,
         max_depth=10,
@@ -25,6 +27,7 @@ def _build_rf(params: Dict[str, Any] | None = None) -> RandomForestClassifier:
 
 
 def _build_lgb(params: Dict[str, Any] | None = None) -> lgb.LGBMClassifier:
+    """Build a LightGBM classifier with default or custom parameters."""
     cfg = dict(
         objective="multiclass",
         num_class=3,
@@ -43,6 +46,7 @@ def _build_lgb(params: Dict[str, Any] | None = None) -> lgb.LGBMClassifier:
 
 
 def _build_cat(params: Dict[str, Any] | None = None) -> CatBoostClassifier:
+    """Build a CatBoost classifier with default or custom parameters."""
     cfg = dict(
         loss_function="MultiClass",
         iterations=800,
@@ -58,22 +62,31 @@ def _build_cat(params: Dict[str, Any] | None = None) -> CatBoostClassifier:
 
 
 def get_model(algo: Algo = "rf", params: Dict[str, Any] | None = None):
+    """Return a classifier instance based on the selected algorithm."""
     if algo == "rf":
         return _build_rf(params)
     if algo == "lgb":
         return _build_lgb(params)
     if algo == "cat":
         return _build_cat(params)
-    raise ValueError(f"Unknown algo: {algo}")
+    raise ValueError(f"Unknown algorithm: {algo}")
 
 
 def train_model(X, y, *, algo: Algo = "rf", params=None):
+    """Train the specified model on training data."""
     model = get_model(algo, params)
     model.fit(X, y)
     return model
 
 
 def evaluate_model(y_true, y_pred, verbose: bool = True) -> Dict[str, float]:
+    """
+    Evaluate model predictions using macro F1 and accuracy.
+
+    Handles shape mismatch between y_pred and y_true, especially when
+    some models return (n, 1) arrays instead of (n,).
+    """
+    y_pred = np.ravel(y_pred)
     if verbose:
         print(classification_report(y_true, y_pred))
     return {
@@ -82,6 +95,7 @@ def evaluate_model(y_true, y_pred, verbose: bool = True) -> Dict[str, float]:
     }
 
 
+# Grid of hyperparameters for LightGBM
 lgb_param_grid = {
     "num_leaves": [31, 63],
     "max_depth": [-1, 8],
@@ -93,6 +107,7 @@ lgb_param_grid = {
 
 
 def lgb_grid_search(X, y, cv=3, scoring="f1_macro") -> Tuple[Dict[str, Any], float]:
+    """Run GridSearchCV to tune LightGBM hyperparameters."""
     gs = GridSearchCV(
         _build_lgb(), lgb_param_grid, cv=cv, scoring=scoring, n_jobs=-1, verbose=1
     )

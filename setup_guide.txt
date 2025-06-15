@@ -25,7 +25,7 @@ python scripts/fetch_understat.py
 python scripts/merge_sources.py
 
 # Trenowanie i ewaluacja modelu
-python -m src.pipeline --algo lgb
+python -m src.pipeline --algo lgb /--save jeśli chcemi zapisać 
 
 # Predykcja pojedynczego meczu
 python scripts/model_predict.py --features "{\"xG_home\":1.4, ...}" --model output/final_model_lgb.pkl

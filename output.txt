@@ -448,7 +448,7 @@ def build_feature_df(raw_json: str | Path, schema: list[str]) -> pd.DataFrame:
 
 # ────────────────────────── główna funkcja ───────────────────────
 def main() -> None:
-    ap = argparse.ArgumentParser(description="Inferencja – pojedynczy mecz")
+    ap = argparse.ArgumentParser(description="Inferencja - pojedynczy mecz")
     ap.add_argument("--model", default="output/final_model_lgb.pkl")
     ap.add_argument("--schema", default="output/feature_schema.json")
 
