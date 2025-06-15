@@ -35,6 +35,12 @@ def main():
     predict_parser.add_argument("--away", required=True)
     predict_parser.add_argument("--date", required=True)
     predict_parser.add_argument("--model-path", required=True)
+    predict_parser.add_argument(
+        "--verbose", action="store_true", help="Show feature values used for prediction"
+    )
+    predict_parser.add_argument(
+        "--proba", action="store_true", help="Show predicted class probabilities"
+    )
 
     args = parser.parse_args()
 
@@ -66,8 +72,27 @@ def main():
             return
         X = match_row[FEATURE_COLUMNS].astype(float)
 
-        pred = model.predict(X)[0]
-        print(f"⚽ Prediction for {args.home} vs {args.away} on {args.date}: {pred}")
+        pred = model.predict(X).item()
+        print(f"\n⚽ Prediction for {args.home} vs {args.away} on {args.date}: {pred}")
+
+        if args.proba:
+            try:
+                proba = model.predict_proba(X)[0]
+                classes = (
+                    model.classes_ if hasattr(model, "classes_") else ["H", "D", "A"]
+                )
+                proba_str = ", ".join(
+                    f"{cls}: {100*p:.1f}%" for cls, p in zip(classes, proba)
+                )
+                print(f"🔎 Probabilities: {proba_str}")
+            except Exception as e:
+                print(f"⚠️ Could not retrieve probabilities: {e}")
+
+        if args.verbose:
+            print("\n🧾 Feature values:")
+            for col in FEATURE_COLUMNS:
+                val = match_row.iloc[0][col]
+                print(f"   {col:>20}: {val}")
 
 
 if __name__ == "__main__":
